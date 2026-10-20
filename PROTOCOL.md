@@ -44,7 +44,8 @@ not `foxhunt` and whose board is not `xiao-esp32c3`.
 or `unknown`), `band`, `bands` (the tunable ranges in MHz), `callsign`,
 `freq`, `bw`, `squelch`, `volume`, `rssi_cmd`, `nvm` (`yes`/`no`), `ptt` (`rx`, or `TX keyed 4.2 s left`), `tx`
 (`available` or `disabled`), `armed`, `power`, `wpm`, `tone`, `foxmsg`,
-`foxdelay`, `fox` (`running (3 cycles)` / `stopped (0 cycles)`).
+`foxdelay`, `fox` (`running (3 cycles)` / `stopped (0 cycles)`), `sq` (`off`,
+`on carrier` or `on quiet`; the SQ wire, firmware 0.4.0+).
 
 ### `help`
 Two lines: the receive commands, then the transmit commands or the note
@@ -110,6 +111,33 @@ Prints `rx`. Safe to send at any time.
 ### `led on|off`
 The status LED. After boot it is on when the SA868 answered the
 handshake.
+
+## The SQ wire (firmware 0.4.0+)
+
+The SA868's pin 1, `SQ`, goes low while the squelch is open, i.e. while a
+carrier is on the tuned channel. It is not routed on the fox PCB; a wire
+from that pad to the XIAO's `D2` (GPIO04) lets the firmware time carrier
+edges itself, which is exact where RSSI polling is ±100 ms and
+threshold-dependent. Off by default so a fox without the wire never reads
+a floating pin.
+
+### `sq [on|off]`
+Without an argument: `off`, `carrier` or `quiet`. `sq on` declares the wire
+present (D2 becomes a pulled-up input; persisted in NVM, byte 28/29) and
+`sq off` releases it. Prints the new state, with `(not persisted: no nvm)`
+appended when NVM is unavailable.
+
+### `events`
+The carrier edges seen since the last `events`, oldest first, then clears
+them. First line `now {ticks_ms} carrier|quiet` gives the fox's own
+millisecond tick and the live level; each following line is
+`{ticks_ms} 1|0` (1 = carrier began, 0 = carrier ended). The fox keeps
+the last 64 edges; poll at least once a minute during a busy hunt. Ticks
+are the fox's `time.monotonic()` in ms and have nothing to do with wall
+time; the host subtracts the `now` line from its own clock. Refused with
+`error:` while `sq` is off. Edges are sampled in the main loop (about every
+few ms), so squelch flutter at a burst's edges appears as short pairs the
+host should merge.
 
 ## Transmit
 

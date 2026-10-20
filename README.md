@@ -79,7 +79,7 @@ ESP32 passes commands and answers between USB and the module's UART.
   firmware involved. The firmware's `volume` setting is that pad's level.
   See [Audio](#audio).
 
-## What it does (v0.7)
+## What it does (v0.8)
 
 - **Connect / detect** — reads `version` and `info`, refuses a port that is not
   a fox running this firmware, shows the module's own version string and
@@ -191,6 +191,7 @@ firmware is not configurable because it is not meant to be general.
 | UART TX (to SA868) | `D6` | GPIO21 | 9600 8N1 |
 | MIC | `D1` | GPIO03 | held low (unused in receive) |
 | Status LED | `D10` | GPIO10 | on when the module answered |
+| SQ (optional wire) | `D2` | GPIO04 | pulled-up input, only after `sq on` |
 
 | SA868 fitted | Module range | Page default (amateur) | Fox frequency |
 |---|---|---|---|
@@ -211,6 +212,32 @@ the fox's `volume` (Receiver section) to taste. The browser needs microphone
 permission once; after that the input shows up by name in the Audio section.
 The audio path is independent of the serial link, so it also works with any
 other receiver's speaker jack.
+
+### The SQ wire for exact cycle timing
+
+The SA868's pin 1, `SQ`, is low while the squelch is open. It is not
+routed either. A wire from that pad to the XIAO's `D2` lets the firmware
+(0.4.0+) time every carrier edge itself; the page then polls `events`
+once a second while the receiver runs and the *Next burst* countdown comes
+from hardware-timed onsets instead of RSSI threshold crossings. Tick
+**SQ wire soldered to D2** in the Fox configuration section once, it is
+kept on the board, and the carrier light next to it follows the pin.
+Leave it unticked on a fox without the wire: D2 is never read then. The
+fox's `squelch` setting decides what counts as a carrier.
+
+### Bench pair
+
+Two foxes on two USB ports, both on dummy loads, a few feet apart: one is
+the receiver (connected with the Connect button, everything on the page),
+the other the **beacon**, paired from the Bench pair section. The beacon
+fox needs the transmit-capable firmware (install it with *Transmit
+commands* ticked), a stored callsign, and the arm checkbox; then *Start
+beacon* runs its `fox` cycle, *Key 5 s* a bare carrier, *Tone* a test
+tone, and *= receiver* tunes it to wherever the receiver is. The receiver
+hears it like any fox: cycle timing, autoseek, the board, the CW decoder
+on the audio path, all without leaving the bench. Its commands show in the
+console prefixed `[B]`. In the simulation, *Pair a second fox* gives a
+simulated beacon the simulated receiver hears.
 
 ## Layout
 
@@ -390,7 +417,7 @@ connected to the page, that connection is used.
 **By hand (Thonny):** *Download code.py*, open it in Thonny with the
 interpreter set to *CircuitPython (generic)* on the fox's port, *File →
 Save As… → CircuitPython device* as exactly `code.py`, Ctrl+D. A healthy
-first boot prints `foxhunt 0.3.1 xiao-esp32c3 sa868-unset` then `ch> `.
+first boot prints `foxhunt 0.4.0 xiao-esp32c3 sa868-unset` then `ch> `.
 Disconnect Thonny (it holds the port), then connect here and pick the
 module.
 

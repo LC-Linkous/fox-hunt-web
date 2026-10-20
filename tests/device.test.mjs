@@ -14,7 +14,7 @@ test('identify: a dual-band fox', async () => {
   const fox = await connected();
   assert.equal(fox.model, 'sa868-dual');
   assert.equal(fox.ident.board, 'xiao-esp32c3');
-  assert.deepEqual(fox.ident.build, [0, 3, 1]);
+  assert.deepEqual(fox.ident.build, [0, 4, 0]);
   assert.ok(fox.bandSet);
   assert.equal(fox.state.freq, 146.565);
   assert.ok(fox.ident.label.includes('dual-band'));
@@ -35,15 +35,15 @@ test('identify: a fox with no band set, then set it', async () => {
 });
 
 test('identifyDevice parses the version line', () => {
-  const d = identifyDevice('foxhunt 0.3.1 xiao-esp32c3 sa868-dual');
-  assert.deepEqual([d.ok, d.key, d.band, d.build], [true, 'sa868-dual', 'dual', [0, 3, 1]]);
-  assert.equal(identifyDevice('foxhunt 0.3.1 xiao-esp32c3 sa868-unset').key, 'sa868-unset');
+  const d = identifyDevice('foxhunt 0.4.0 xiao-esp32c3 sa868-dual');
+  assert.deepEqual([d.ok, d.key, d.band, d.build], [true, 'sa868-dual', 'dual', [0, 4, 0]]);
+  assert.equal(identifyDevice('foxhunt 0.4.0 xiao-esp32c3 sa868-unset').key, 'sa868-unset');
   assert.equal(identifyDevice('foxdemo 0.3.0 xiao-esp32c3 sa868-vhf').ok, true);   // the pre-rename firmware name
   assert.equal(identifyDevice('tinySA4_v1.4-252').ok, false);
-  assert.equal(identifyDevice('foxhunt 0.3.1 pico sa868-vhf').ok, false);
-  assert.equal(identifyDevice('foxhunt 0.3.1 xiao-esp32c3 sa818-vhf').ok, false);
+  assert.equal(identifyDevice('foxhunt 0.4.0 pico sa868-vhf').ok, false);
+  assert.equal(identifyDevice('foxhunt 0.4.0 xiao-esp32c3 sa818-vhf').ok, false);
   assert.deepEqual(parseVersion('1.10.3'), [1, 10, 3]);
-  assert.ok(buildAtLeast([0, 3, 1], FIRMWARE_FLOOR) && !buildAtLeast([0, 2, 9], FIRMWARE_FLOOR));
+  assert.ok(buildAtLeast([0, 4, 0], FIRMWARE_FLOOR) && !buildAtLeast([0, 2, 9], FIRMWARE_FLOOR));
 });
 
 test('classifyReply follows PROTOCOL.md', () => {

@@ -54,6 +54,8 @@
 <li>The SA868 fitted (VHF, UHF or dual-band) is a setting kept on the board; the page's <em>Module</em> dropdown sets it once.</li>
 <li>Signal strength is the module's RSSI byte, 0–255, uncalibrated: a relative "warmer / colder" instrument, not a dBm meter.</li>
 <li>The audio decoders do not use the fox's microcontroller at all: a wire from the SA868's <code>AF_OUT</code> pad to a sound card gives the page the audio. See the README for the wiring.</li>
+<li>A second optional wire, from the SA868's <code>SQ</code> pad to <code>D2</code>, lets the firmware (0.4.0+) time carrier edges itself; the page's burst countdown then comes from those. It is off until declared on the page, so a fox without the wire never reads the pin.</li>
+<li>Two foxes on two USB ports make a <em>bench pair</em>: one receives on the page, the other runs as the beacon, both on dummy loads.</li>
 </ul>
 
 <h2>What the page keeps, and what it asks for</h2>

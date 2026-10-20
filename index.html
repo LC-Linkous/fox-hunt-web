@@ -152,6 +152,34 @@
       </div>
     </section>
 
+    <section data-section="pair" id="pairSection">
+      <h2><button type="button" aria-expanded="false">Bench pair</button></h2>
+      <div class="body">
+        <p class="hint" style="margin:0 0 8px">A second fox on another USB port is the <b>beacon</b>; the one connected above stays the <b>receiver</b> with everything on this page. Both on dummy loads, a few feet apart. Verifies a fox's TX, the cycle timing, autoseek and the decoders without going outside.</p>
+        <div class="tools"><button class="btn" id="pairBtn">Pair a second fox</button><span class="hint" id="pairStatus" style="align-self:center">not paired</span></div>
+        <div id="pairControls" hidden>
+          <dl class="kv"><dt>Beacon fox</dt><dd id="pairIdent">—</dd><dt>Firmware</dt><dd id="pairFw">—</dd><dt>Tuned</dt><dd id="pairFreq">—</dd><dt>Transmit</dt><dd id="pairTx">—</dd></dl>
+          <div class="field"><label for="pairCallsign">Callsign on the beacon</label>
+            <div class="row"><input type="text" id="pairCallsign" placeholder="N0CALL" maxlength="16" style="text-transform:uppercase"><button class="btn small" id="pairCallsignBtn">Save</button></div></div>
+          <label class="field" style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" id="pairArm" style="margin-top:3px"><span>Arm the beacon: I hold an amateur radio license, its callsign is mine or my event's, and a dummy load or antenna is on its RF port.</span></label>
+          <div class="field"><label for="pairFreqIn">Beacon frequency (MHz)</label>
+            <div class="row"><input type="number" id="pairFreqIn" step="0.0125" style="width:100%"><button class="btn small" id="pairTuneBtn" title="Tune the beacon">Tune</button><button class="btn small" id="pairFollowBtn" title="Tune the beacon to the receiver's frequency">= receiver</button></div></div>
+          <div class="two-col">
+            <div class="field"><label for="pairMsg">Message</label><input type="text" id="pairMsg" value="FOX" maxlength="40" style="text-transform:uppercase;width:100%"></div>
+            <div class="field"><label for="pairDelay">Seconds between</label><input type="number" id="pairDelay" value="30" min="5" max="600" step="5" style="width:100%"></div>
+          </div>
+          <div class="tools">
+            <button class="btn primary" id="pairFoxBtn" disabled aria-pressed="false">Start beacon</button>
+            <button class="btn small" id="pairKeyBtn" disabled title="tx on 5: a 5 s carrier from the beacon">Key 5 s</button>
+            <button class="btn small" id="pairToneBtn" disabled title="tone 800 500">Tone</button>
+          </div>
+          <dl class="kv"><dt>Beacon</dt><dd id="pairFoxLine">stopped</dd></dl>
+          <div class="stack"><button class="btn block" id="pairDropBtn">Unpair</button></div>
+        </div>
+        <p class="hint" id="pairNote"></p>
+      </div>
+    </section>
+
     <section data-section="audio">
       <h2><button type="button" aria-expanded="false">Audio</button></h2>
       <div class="body">
@@ -257,6 +285,8 @@
         <div class="field" style="margin-top:10px"><label for="callsign">Callsign</label>
           <div class="row"><input type="text" id="callsign" placeholder="N0CALL" maxlength="16" style="text-transform:uppercase" disabled><button class="btn small" id="callsignBtn" disabled>Save</button></div>
           <p class="hint">Not used by this receive-only build. The transmit-capable firmware will refuse to key while this is <code>N0CALL</code>, so it is set here, once, ahead of time.</p></div>
+        <div class="field" style="margin-top:10px"><label class="row check"><input type="checkbox" id="sqWire" disabled> <span>SQ wire soldered to D2 <span class="sq-dot" id="sqDot" title="carrier detect"></span> <span id="sqLevel" class="dim"></span></span></label>
+          <p class="hint">Only tick this once a wire joins the SA868's SQ pad (module pin 1) to the XIAO's D2. The firmware then times carrier edges itself (<code>events</code>), and the cycle countdown comes from those instead of RSSI thresholds. Kept on the board.</p></div>
         <p class="hint" id="foxStatus"></p>
       </div>
     </section>
@@ -400,7 +430,7 @@
 <footer>
   fox-hunt-web <span id="appVersion"></span> · Last updated <time id="updated" datetime="2026-10-20">2026-10-20</time> · Works in Chrome and Edge via Web Serial; audio decoding works in any browser. Page <a href="https://github.com/LC-Linkous/fox-hunt-web/blob/main/LICENSE">GPL-2.0</a>, firmware GPL-3.0.
   Maintained by <a href="https://github.com/LC-Linkous">LC Linkous</a>. For the <a href="https://github.com/HamRadioVillage/dc34fox">Ham Radio Village DC34 fox</a>; not affiliated with the Village, NiceRF, or Seeed. No license is needed to listen; one is needed to transmit, and the firmware ships with transmit disabled.
-  <span class="fw"><b>Firmware:</b> <a href="#firmwareSection">install from this page</a>, or download <a id="fwLink" href="firmware/code.py" download="code.py">code.py</a> (firmware <span id="fwNeed">0.3.1</span>). Also on the <a href="https://github.com/LC-Linkous/fox-hunt-web/releases/latest">latest release</a>. Runs locally too: serve the folder and open it (<a href="about.html#local">how</a>).</span>
+  <span class="fw"><b>Firmware:</b> <a href="#firmwareSection">install from this page</a>, or download <a id="fwLink" href="firmware/code.py" download="code.py">code.py</a> (firmware <span id="fwNeed">0.4.0</span>). Also on the <a href="https://github.com/LC-Linkous/fox-hunt-web/releases/latest">latest release</a>. Runs locally too: serve the folder and open it (<a href="about.html#local">how</a>).</span>
 </footer>
 
 <script type="module" src="js/main.js"></script>

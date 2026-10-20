@@ -17,29 +17,43 @@ const MORSE = { A: '.-', B: '-...', C: '-.-.', D: '-..', E: '.', F: '..-.', G: '
 const BANDS = { vhf: [[134, 174]], uhf: [[400, 480]], dual: [[134, 174], [400, 480]] };
 const DEFAULT_FREQ = { vhf: 146.565, uhf: 433.900, dual: 146.565 };
 
+/** Every open simulated fox: one's transmitter is heard by the others, so a paired beacon shows up on the receiver. */
+const AIR = new Set();
+
 export class DemoLink extends ShellLink {
   /** opts.band: 'vhf'|'uhf'|'dual'|null (null = fresh board, band unset). opts.txEnabled mirrors TX_ENABLED. */
   constructor({ band = 'dual', callsign = 'N0CALL', txEnabled = false } = {}) {
     super();
     this.band = band; this.callsign = callsign; this.txEnabled = txEnabled;
-    this.armed = false; this.keyedUntil = 0; this.power = 'low'; this.wpm = 12; this.tone = 800; this.foxmsg = 'FOX'; this.foxdelay = 30;
+    this.armed = false; this.keyedUntil = 0; this.keyedFrom = 0; this.power = 'low'; this.wpm = 12; this.tone = 800; this.foxmsg = 'FOX'; this.foxdelay = 30;
     this.foxRunning = false; this.foxNext = 0; this.foxCycles = 0; this.foxTimer = null; this.txLog = [];   // txLog: what went on the air, for the tests
     this.freq = band ? DEFAULT_FREQ[band] : 146.565;
     this.bw = 1; this.squelch = 3; this.volume = 5;
-    this.t0 = Date.now();
+    this.t0 = Date.now() - 600_000;   // "booted" ten minutes ago: tick counts are positive like a real fox's
     this.foxes = [
       { f: 146.565, peak: 215, on: 12, period: 40, phase: 0, bearing: 60 },    // keyed, like the DC34 fox; it sits to the ENE
       { f: 433.900, peak: 140, on: Infinity, period: 1, phase: 0, bearing: 300 }, // a continuous one, weaker, to the NW
       { f: 146.520, peak: 90, on: 3, period: 17, phase: 5, bearing: 180 },     // someone calling on the simplex channel
     ];
     this.heading = null;   // set by the page when a heading is known: the simulated antenna is a yagi pointing that way
+    this.sqOn = false; this.sqSince = Date.now();   // the simulated SQ wire: `sq on` declares it, `events` drains edges since sqSince
+    AIR.add(this);
+  }
+  /** Is the squelch open on `f` at `at`? The SA868's SQ pin: low when the signal clears the squelch setting. */
+  carrierAt(f, at = Date.now()) { return this.strengthAt(f, at) > 32 + 8 * this.squelch; }
+  /** Carrier edges on the tuned channel between two wall-clock times, from the keying schedule: [[ms, 1|0], ...]. */
+  edgesBetween(from, to) {
+    const out = []; let level = this.carrierAt(this.freq, from);
+    for (let at = from + 50; at <= to; at += 50) { const l = this.carrierAt(this.freq, at); if (l !== level) { level = l; out.push([at, l ? 1 : 0]); } }
+    return out;
   }
   async open() {}
   info() { return 'demo'; }
-  async close() { this.closed = true; this._foxStop(); }
+  async close() { this.closed = true; this._foxStop(); AIR.delete(this); }
 
   // ---- transmit simulation ------------------------------------------------
   _keyed() { return this.keyedUntil > Date.now(); }
+  _keyedAt(at) { return this.keyedFrom <= at && at < this.keyedUntil; }
   _unkey() { this.keyedUntil = 0; }
   _txWhy() {
     if (!this.txEnabled) return 'transmit commands are not enabled in this firmware build (TX_ENABLED is False)';
@@ -62,7 +76,7 @@ export class DemoLink extends ShellLink {
       if (this._txWhy()) { this.foxRunning = false; return; }
       const text = `${this.callsign} ${this.foxmsg}`, s = this._morseSeconds(text);
       // a cycle: the simulated air carries the ID; the demo keeps it to 1/10 of real time so the page can be exercised
-      this.keyedUntil = Date.now() + s * 100; this.txLog.push({ t: Date.now(), kind: 'fox', text });
+      this.keyedFrom = Date.now(); this.keyedUntil = Date.now() + s * 100; this.txLog.push({ t: Date.now(), kind: 'fox', text });
       setTimeout(() => { if (this.foxRunning) { this.foxCycles++; this._unkey(); this._foxSchedule(this.foxdelay * 100); } }, s * 100);
     }, ms);
   }
@@ -79,11 +93,11 @@ export class DemoLink extends ShellLink {
   _bandText() { return this.band ? this._ranges().map(([a, b]) => `${a}-${b}`).join(' ') + ' MHz' : 'unset'; }
 
   /** The RSSI byte the module would report at frequency f (MHz) right now. */
-  rssiAt(f, at = Date.now()) {
-    const t = (at - this.t0) / 1000;
-    let v = 26 + 3 * Math.sin(t / 7);                                   // slowly wandering floor
+  /** The strongest simulated signal on `f` at `at`, as the receiver would see it (selectivity, fade, antenna), without noise. 0 when nothing is keyed there. */
+  strengthAt(f, at = Date.now()) {
+    const t = (at - this.t0) / 1000; let v = 0;
     for (const fx of this.foxes) {
-      const keyed = fx.on === Infinity || ((t + fx.phase) % fx.period) < fx.on;
+      const keyed = fx.on === Infinity || (((t + fx.phase) % fx.period + fx.period) % fx.period) < fx.on;
       if (!keyed) continue;
       // FM receiver selectivity: full strength within half the channel width, then falls off fast
       const d = Math.abs(f - fx.f) * 1000, half = this.bw ? 12.5 : 6.25;
@@ -94,6 +108,18 @@ export class DemoLink extends ShellLink {
       if (this.heading != null) { const d = Math.abs((((this.heading - fx.bearing) % 360) + 540) % 360 - 180); gain = Math.max(Math.exp(-(d * d) / (2 * 30 * 30)), 0.18 * Math.exp(-((180 - d) ** 2) / (2 * 40 * 40)), 0.06); }
       v = Math.max(v, fx.peak * sel * fade * gain);
     }
+    // another simulated fox keyed on the bench: a few feet away, so it pins the meter on its channel
+    for (const o of AIR) {
+      if (o === this || o.closed || !o._keyedAt(at)) continue;
+      const d = Math.abs(f - o.freq) * 1000, half = this.bw ? 12.5 : 6.25;
+      const sel = d <= half ? 1 : Math.max(0, 1 - (d - half) / (half * 1.5));
+      v = Math.max(v, (o.power === 'high' ? 250 : 232) * sel);
+    }
+    return v;
+  }
+  rssiAt(f, at = Date.now()) {
+    const t = (at - this.t0) / 1000;
+    let v = Math.max(26 + 3 * Math.sin(t / 7), this.strengthAt(f, at));   // slowly wandering floor under the signal
     v += (Math.random() - 0.5) * 5;
     return Math.max(0, Math.min(255, Math.round(v)));
   }
@@ -104,14 +130,15 @@ export class DemoLink extends ShellLink {
     const needBand = () => { if (this.band) return false; body = 'error: module band not set; send `band vhf|uhf|dual` first'; return true; };
     switch (lc) {
       case '': break;
-      case 'version': body = `foxhunt 0.3.1 xiao-esp32c3 sa868-${this.band || 'unset'}`; break;
+      case 'version': body = `foxhunt 0.4.0 xiao-esp32c3 sa868-${this.band || 'unset'}`; break;
       case 'info': body = [
-        'firmware: foxhunt 0.3.1', 'board: xiao-esp32c3', `module: sa868-${this.band || 'unset'} connected`,
+        'firmware: foxhunt 0.4.0', 'board: xiao-esp32c3', `module: sa868-${this.band || 'unset'} connected`,
         'module_version: +VERSION:SA868S-VHF/UHF_V1.6 (demo)', `band: ${this.band || 'unset'}`, `bands: ${this._bandText()}`,
         `callsign: ${this.callsign}`, `freq: ${this.freq.toFixed(4)}`, `bw: ${this.bw}`, `squelch: ${this.squelch}`, `volume: ${this.volume}`,
         'rssi_cmd: AT+RSSI?', 'nvm: yes', `ptt: ${this._keyed() ? `TX keyed ${((this.keyedUntil - Date.now()) / 1000).toFixed(1)} s left` : 'rx'}`, `tx: ${this.txEnabled ? 'available' : 'disabled'}`,
+        `sq: ${!this.sqOn ? 'off' : this.carrierAt(this.freq) ? 'on carrier' : 'on quiet'}`,
         `armed: ${this.armed ? 'yes' : 'no'}`, `power: ${this.power}`, `wpm: ${this.wpm}`, `tone: ${this.tone}`, `foxmsg: ${this.foxmsg}`, `foxdelay: ${this.foxdelay}`, `fox: ${this.foxRunning ? 'running' : 'stopped'} (${this.foxCycles} cycles)`].join('\n'); break;
-      case 'help': body = 'commands: version info help band callsign tune rssi scan squelch bw volume at rx led\n' + (this.txEnabled ? 'transmit: tx arm|disarm|on [s]|off  tone {Hz} {ms}  morse {text}  power low|high  wpm {n}  foxmsg {text}  foxdelay {s}  fox start|stop' : 'transmit: disabled in this build (TX_ENABLED is False)'); break;
+      case 'help': body = 'commands: version info help band callsign tune rssi scan squelch bw volume at rx led sq events\n' + (this.txEnabled ? 'transmit: tx arm|disarm|on [s]|off  tone {Hz} {ms}  morse {text}  power low|high  wpm {n}  foxmsg {text}  foxdelay {s}  fox start|stop' : 'transmit: disabled in this build (TX_ENABLED is False)'); break;
       case 'band': {
         if (!a.length) { body = this.band || 'unset'; break; }
         const w = a[0].toLowerCase();
@@ -160,6 +187,15 @@ export class DemoLink extends ShellLink {
         body = at === 'AT+DMOCONNECT' ? '+DMOCONNECT:0' : at === 'AT+VERSION' ? '+VERSION:SA868S-VHF/UHF_V1.6 (demo)' : at === 'AT+RSSI?' || at === 'RSSI?' ? `RSSI=${String(this.rssiAt(this.freq)).padStart(3, '0')}` : at.startsWith('AT+DMOSETGROUP=') ? '+DMOSETGROUP:0' : at.startsWith('AT+DMOSETVOLUME=') ? '+DMOSETVOLUME:0' : '(no reply)';
         delay = 60; break; }
       case 'rx': this._foxStop(); body = 'rx'; break;
+      case 'sq': {
+        if (!a.length) { body = !this.sqOn ? 'off' : this.carrierAt(this.freq) ? 'carrier' : 'quiet'; break; }
+        const w = a[0].toLowerCase(); if (!['on', 'off'].includes(w)) { body = 'usage: sq on|off'; break; }
+        this.sqOn = w === 'on'; this.sqSince = Date.now(); body = w; break; }
+      case 'events': {
+        if (!this.sqOn) { body = 'error: the SQ wire is not enabled; send `sq on` once it is soldered to D2'; break; }
+        const now = Date.now(), L = [`now ${now - this.t0} ${this.carrierAt(this.freq, now) ? 'carrier' : 'quiet'}`];
+        for (const [at, l] of this.edgesBetween(this.sqSince, now).slice(-64)) L.push(`${at - this.t0} ${l}`);
+        this.sqSince = now; body = L.join('\n'); break; }
       case 'led': body = ['on', 'off'].includes((a[0] || '').toLowerCase()) ? a[0].toLowerCase() : 'usage: led on|off'; break;
       case 'tx': {
         if (!a.length) { body = !this.txEnabled ? 'disabled' : this._keyed() ? `on ${((this.keyedUntil - Date.now()) / 1000).toFixed(1)}` : this.armed ? 'armed' : 'off'; break; }
@@ -167,7 +203,7 @@ export class DemoLink extends ShellLink {
         if (!this.txEnabled) { body = 'error: transmit commands are not enabled in this firmware build (TX_ENABLED is False)'; break; }
         if (w === 'arm') { if (this.callsign === 'N0CALL') { body = 'error: no callsign stored; set one with `callsign` first'; break; } this.armed = true; body = 'armed'; }
         else if (w === 'disarm') { this.armed = false; this._foxStop(); body = 'off'; }
-        else if (w === 'on') { const why = this._txWhy(); if (why) { body = 'error: ' + why; break; } let secs = 10; if (a[1] != null) { secs = parseFloat(a[1]); if (!Number.isFinite(secs)) { body = 'usage: tx on [seconds]'; break; } } if (secs > 60) { body = 'usage: tx on [1..60]'; break; } secs = Math.max(0.1, secs); this.keyedUntil = Date.now() + secs * 1000; this.txLog.push({ t: Date.now(), kind: 'key', secs }); body = `on ${secs.toFixed(1)}`; }
+        else if (w === 'on') { const why = this._txWhy(); if (why) { body = 'error: ' + why; break; } let secs = 10; if (a[1] != null) { secs = parseFloat(a[1]); if (!Number.isFinite(secs)) { body = 'usage: tx on [seconds]'; break; } } if (secs > 60) { body = 'usage: tx on [1..60]'; break; } secs = Math.max(0.1, secs); this.keyedFrom = Date.now(); this.keyedUntil = Date.now() + secs * 1000; this.txLog.push({ t: Date.now(), kind: 'key', secs }); body = `on ${secs.toFixed(1)}`; }
         else if (w === 'off') { this._unkey(); body = 'off'; }
         else body = 'usage: tx [arm|disarm|on [s]|off]';
         break; }
@@ -176,12 +212,14 @@ export class DemoLink extends ShellLink {
         const hz = parseInt(a[0], 10), dur = parseInt(a[1], 10);
         if (!(hz >= 300 && hz <= 3000) || !(dur >= 10 && dur <= 5000)) { body = 'usage: tone {300..3000} {10..5000}'; break; }
         const why = this._txWhy(); if (why) { body = 'error: ' + why; break; }
+        this.keyedFrom = Date.now() + 800; this.keyedUntil = this.keyedFrom + dur;   // on the air for the tone itself
         this.txLog.push({ t: Date.now(), kind: 'tone', hz, dur }); body = `sent ${hz} Hz ${dur} ms`; delay = Math.min(1500, 850 + dur); break; }
       case 'morse': {
         if (!a.length) { body = 'usage: morse {text}'; break; }
         const text = a.join(' '); if (text.length > 64) { body = 'usage: morse text up to 64 characters'; break; }
         const why = this._txWhy(); if (why) { body = 'error: ' + why; break; }
         const s = this._morseSeconds(text); this.txLog.push({ t: Date.now(), kind: 'morse', text, s });
+        this.keyedFrom = Date.now(); this.keyedUntil = Date.now() + Math.min(2000, s * 100);
         body = `sent ${s.toFixed(1)}`; delay = Math.min(2000, s * 100); break; }   // 1/10 of real time
       case 'power': { if (!a.length) { body = this.power; break; } const w = a[0].toLowerCase(); if (!['low', 'high'].includes(w)) { body = 'usage: power low|high'; break; } this.power = w; body = w; break; }
       case 'wpm': { if (!a.length) { body = String(this.wpm); break; } const v = parseInt(a[0], 10); if (!(v >= 5 && v <= 35)) { body = 'usage: wpm {5..35}'; break; } this.wpm = v; body = String(v); break; }

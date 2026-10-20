@@ -1,6 +1,6 @@
 // sw.js — offline cache for the hunt: the page, its scripts, the firmware. Stale-while-revalidate.
 // SPDX-License-Identifier: GPL-2.0-only
-const CACHE = 'fox-hunt-web-v0.7.0';
+const CACHE = 'fox-hunt-web-v0.8.0';
 const SHELL = ['./', 'index.html', 'about.html', 'sw.js', 'firmware/code.py', 'PROTOCOL.md',
   'css/theme.css', 'css/layout.css', 'css/components.css', 'css/fox.css',
   'js/main.js', 'js/fmt.js', 'js/hunt.js', 'js/bearing.js',

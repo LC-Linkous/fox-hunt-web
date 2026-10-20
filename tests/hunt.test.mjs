@@ -76,3 +76,31 @@ test('callsigns are found in decoded text', () => {
   assert.deepEqual(findCallsigns('VE3ABC/P FOX 2E0XYZ'), ['VE3ABC', '2E0XYZ']);
   assert.deepEqual(findCallsigns('FOX FOX 146 565'), []);
 });
+
+test('edge feeder: SQ-wire edges give exact bursts, flutter is merged, nextAt lands on the next onset', async () => {
+  const { createEdgeFeeder } = await import('../js/hunt.js');
+  const ct = createCycleTracker(); ct.hardware = true;
+  const ef = createEdgeFeeder(ct);
+  const foxNow = 500_000, hostNow = 2_000_000; ef.sync(foxNow, hostNow);
+  // 12 s on / 40 s period, four bursts, with a 60 ms squelch flutter at the start of the third
+  const edges = [];
+  for (let k = 0; k < 4; k++) {
+    const on = foxNow + 5000 + k * 40000;
+    if (k === 2) { edges.push({ ms: on, on: true }, { ms: on + 40, on: false }, { ms: on + 100, on: true }); }
+    else edges.push({ ms: on, on: true });
+    edges.push({ ms: on + 12000, on: false });
+  }
+  assert.equal(ef.feed(edges), 4);
+  // RSSI readings meanwhile must not add bursts of their own
+  for (let i = 0; i < 400; i++) ct.feed(hostNow + i * 100, i % 400 < 120 ? 200 : 30);
+  const now = hostNow + 5000 + 3 * 40000 + 20000;
+  const st = ct.status(now);
+  assert.equal(st.cycles, 4); assert.equal(st.hardware, true);
+  assert.equal(st.periodMs, 40000); assert.ok(Math.abs(st.onMs - 12000) <= 100, `on ${st.onMs}`);
+  assert.equal(st.nextAt, hostNow + 5000 + 4 * 40000);
+  assert.ok(st.confidence >= 0.75);
+  assert.ok(ef.flutter >= 1);
+  // the wire's live level drives `on`
+  ef.apply(true, foxNow + 5000 + 4 * 40000); assert.equal(ct.status(now + 20000).on, true);
+  ef.apply(false, foxNow + 5000 + 4 * 40000 + 12000); assert.equal(ct.on, false);
+});

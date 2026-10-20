@@ -12,7 +12,7 @@
  * needs ≥ minOnMs to count, so a scan hopping through doesn't register.
  */
 export function createCycleTracker({ minOnMs = 800, minMargin = 20, keep = 8 } = {}) {
-  const ct = { floor: null, peak: null, on: false, onsetT: null, onsetValid: false, onsets: [], durations: [], lastOff: null, seenOff: false };
+  const ct = { keep, floor: null, peak: null, on: false, onsetT: null, onsetValid: false, onsets: [], durations: [], lastOff: null, seenOff: false, hardware: false };
   ct.reset = () => { ct.floor = null; ct.peak = null; ct.on = false; ct.onsetT = null; ct.onsetValid = false; ct.onsets = []; ct.durations = []; ct.lastOff = null; ct.seenOff = false; };
   ct.threshold = () => ct.floor == null ? Infinity : ct.floor + Math.max(minMargin, (ct.peak - ct.floor) / 2);
   ct.feed = (t, rssi) => {
@@ -20,6 +20,7 @@ export function createCycleTracker({ minOnMs = 800, minMargin = 20, keep = 8 } =
     if (ct.floor == null) { ct.floor = rssi; ct.peak = rssi; }
     if (!ct.on) ct.floor = rssi < ct.floor ? ct.floor * 0.5 + rssi * 0.5 : ct.floor * 0.98 + rssi * 0.02;
     ct.peak = rssi > ct.peak ? rssi : Math.max(ct.peak - 0.05, ct.floor + minMargin);
+    if (ct.hardware) return;   // the SQ wire owns on/off; RSSI only keeps the floor and peak
     const thr = ct.threshold(), on = ct.on ? rssi > thr - 6 : rssi > thr + 6;
     if (on && !ct.on) { ct.on = true; ct.onsetT = t; ct.onsetValid = ct.seenOff; }   // a burst already on when listening began has no known onset
     else if (!on && ct.on) {
@@ -38,9 +39,44 @@ export function createCycleTracker({ minOnMs = 800, minMargin = 20, keep = 8 } =
     const lastOnset = ct.on && ct.onsetValid ? ct.onsetT : ct.onsets[n - 1]; // a burst in progress counts from its own onset
     if (periodMs && n >= 2) { nextAt = lastOnset + periodMs; while (nextAt < now) nextAt += periodMs; }   // roll forward if a burst was missed
     const spread = gaps.length >= 2 ? (Math.max(...gaps) - Math.min(...gaps)) / periodMs : 1;
-    return { cycles: n, onMs, periodMs, nextAt, on: ct.on, spread, confidence: n < 2 ? 0 : Math.min(1, (n - 1) / 4) * (spread < 0.15 ? 1 : spread < 0.4 ? 0.6 : 0.3), floor: ct.floor, peak: ct.peak, threshold: ct.threshold() };
+    return { cycles: n, onMs, periodMs, nextAt, on: ct.on, spread, hardware: ct.hardware, confidence: n < 2 ? 0 : Math.min(1, (n - 1) / 4) * (spread < 0.15 ? 1 : spread < 0.4 ? 0.6 : 0.3), floor: ct.floor, peak: ct.peak, threshold: ct.threshold() };
   };
   return ct;
+}
+
+/**
+ * Hardware edges from the SQ wire, fed into a cycle tracker as exact bursts.
+ * The fox reports its own ms ticks; `sync(foxNow, hostNow)` keeps the
+ * offset so onsets land on page time. Edges within `minOnMs` of each other
+ * (squelch flutter at the burst edges) are merged.
+ */
+export function createEdgeFeeder(tracker, { minOnMs = 300 } = {}) {
+  const ef = { offset: null, level: null, onsetT: null, bursts: 0, flutter: 0 };
+  ef.sync = (foxNow, hostNow = Date.now()) => { ef.offset = hostNow - foxNow; };
+  /** { ms, on } edges in order; returns the number of complete bursts recorded. */
+  ef.feed = edges => {
+    if (ef.offset == null) return 0;
+    let n = 0;
+    for (const e of edges) {
+      const t = e.ms + ef.offset;
+      if (e.on === ef.level) continue;
+      if (e.on) { if (ef.level === false && ef.onsetT != null && ef.offT != null && t - ef.offT < minOnMs) { ef.flutter++; ef.level = true; continue; } ef.onsetT = t; ef.level = true; }
+      else {
+        ef.level = false; ef.offT = t;
+        if (ef.onsetT == null) continue;
+        const dur = t - ef.onsetT;
+        if (dur < minOnMs) { ef.flutter++; ef.onsetT = null; continue; }
+        // a tracker burst: push the onset/duration directly, keeping its own ring
+        tracker.onsets.push(ef.onsetT); tracker.durations.push(dur); tracker.lastOff = t; tracker.seenOff = true;
+        const keep = tracker.keep ?? 8; while (tracker.onsets.length > keep) { tracker.onsets.shift(); tracker.durations.shift(); }
+        ef.bursts++; n++; ef.onsetT = null;
+      }
+    }
+    return n;
+  };
+  /** The tracker's `on` mirrors the wire so the page's "keyed now" and nextAt follow the hardware. */
+  ef.apply = (carrier, foxNow) => { if (ef.offset == null) return; const t = foxNow + ef.offset; if (carrier && !tracker.on) { tracker.on = true; tracker.onsetT = ef.onsetT ?? t; tracker.onsetValid = ef.onsetT != null; } else if (!carrier && tracker.on) { tracker.on = false; tracker.seenOff = true; } };
+  return ef;
 }
 
 // ---------------------------------------------------------------- autoseek

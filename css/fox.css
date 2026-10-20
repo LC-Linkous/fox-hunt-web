@@ -93,3 +93,8 @@ table.bearings td:nth-child(3) { font-family: var(--mono); font-weight: 700; col
 .fw-steps { margin-top: 10px; color: var(--ink-2); font-size: .88rem; }
 .fw-steps summary { cursor: pointer; color: var(--ink); }
 .fw-steps ol { padding-left: 20px; }
+
+/* the SQ wire's carrier light */
+.sq-dot { display:inline-block; width:10px; height:10px; border-radius:50%; background:var(--edge); vertical-align:middle; margin-left:4px; }
+.sq-dot.carrier { background:var(--ok); box-shadow:0 0 6px var(--ok); }
+.sq-dot.quiet { background:var(--held); }

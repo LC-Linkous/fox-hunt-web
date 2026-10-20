@@ -63,15 +63,15 @@ The simulated fox and session replay work everywhere.
 - Captures stamped with location and saved with the session, so two
   captures from two spots give a fix on paper.
 
-## v0.7 — bench and firmware (installer, offline and the scroll fix shipped in 0.7.0; the rest pending)
+## v0.7 / v0.8 — bench and firmware (shipped, except SSTV transmit)
 
-- **Bench pair**: two serial ports in one page, A (transmitter, beacon) and
-  B (receiver, decoder); the whole chain on dummy loads on one table.
-- **SQ wire + `events`**: SA868 pin 1 (carrier detect) to a spare GPIO;
-  firmware timestamps edges and returns them on request; autoseek and
-  cycle timing use them when present, fall back to polling when not.
-  Documented as an optional solder job until the next PCB revision routes
-  it.
+- **Bench pair** (0.8.0): two serial ports in one page, the connected fox
+  as receiver and a paired one as beacon; the whole chain on dummy loads.
+- **SQ wire + `events`** (0.8.0, firmware 0.4.0): SA868 pin 1 to `D2`;
+  firmware timestamps edges, `events` returns them; cycle timing uses them
+  when the wire is declared, RSSI thresholds otherwise. An optional solder
+  job until the next PCB revision routes it. Autoseek still decides from
+  RSSI (it hops channels, where the wire's edges would be its own hops).
 - **SSTV transmit**: sound card out → MIC pin, firmware keys for the
   duration (`tx on <s>`), page plays the encoded picture. Needs the MIC
   audio path on the board checked for level.

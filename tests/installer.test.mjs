@@ -43,7 +43,7 @@ test('configureFirmware flips exactly the TX gate', () => {
   assert.match(on, /^TX_ENABLED = True$/m); assert.equal(on.length, FIRMWARE.length + 'True'.length - 'False'.length);
   assert.equal(configureFirmware(on, { txEnabled: false }), FIRMWARE);
   assert.throws(() => configureFirmware('print(1)\n'));
-  assert.equal(firmwareVersion(FIRMWARE), '0.3.1');
+  assert.equal(firmwareVersion(FIRMWARE), '0.4.0');
   assert.ok(![...FIRMWARE].some(c => c.charCodeAt(0) > 127), 'firmware must be ASCII so JSON literals are valid Python');
 });
 
@@ -58,7 +58,7 @@ test('installCodePy writes the whole file in chunks, renames it into place, and 
   assert.equal(link.files.get('code.py'), FIRMWARE);
   assert.ok(!link.files.has('code.py.new'));
   assert.ok(link.writes >= Math.ceil(FIRMWARE.length / 500));
-  assert.equal(r.version, 'foxhunt 0.3.1 xiao-esp32c3 sa868-unset');
+  assert.equal(r.version, 'foxhunt 0.4.0 xiao-esp32c3 sa868-unset');
   assert.deepEqual([...new Set(steps)], ['interrupt', 'raw-repl', 'write', 'reboot', 'done']);
 });
 

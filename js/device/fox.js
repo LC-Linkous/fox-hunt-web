@@ -35,7 +35,7 @@ export class Fox {
     this.link = link;
     this.model = UNSET_MODEL.key;
     this.ident = { version: '', info: '', firmware: '', build: null, board: '', module: '', band: null, label: '' };
-    this.state = { freq: null, bw: null, squelch: null, volume: null, band: null, callsign: '', moduleConnected: null, moduleVersion: '', rssiCmd: '', nvm: null,
+    this.state = { freq: null, bw: null, squelch: null, volume: null, band: null, callsign: '', moduleConnected: null, moduleVersion: '', rssiCmd: '', nvm: null, sqWire: false, sqCarrier: null,
       txAvailable: false, armed: false, keyed: false, keyedLeft: 0, power: 'low', wpm: 12, tone: 800, foxmsg: '', foxdelay: 30, foxRunning: false, foxCycles: 0 };
     this.lastStatus = STATUS.OK;
     this.onWarning = null;         // (text) => void
@@ -82,6 +82,7 @@ export class Fox {
     s.moduleConnected = /connected/.test(kv.module || '') && !/NOT/.test(kv.module || '');
     s.moduleVersion = kv.module_version || ''; s.rssiCmd = kv.rssi_cmd || ''; s.nvm = kv.nvm === 'yes';
     s.txAvailable = kv.tx === 'available'; s.armed = kv.armed === 'yes';
+    s.sqWire = /^on/.test(kv.sq || ''); s.sqCarrier = s.sqWire ? /carrier/.test(kv.sq) : null;
     const k = /keyed ([\d.]+)/.exec(kv.ptt || ''); s.keyed = !!k; s.keyedLeft = k ? parseFloat(k[1]) : 0;
     s.power = kv.power || 'low'; s.wpm = parseInt(kv.wpm, 10) || 12; s.tone = parseInt(kv.tone, 10) || 800; s.foxmsg = kv.foxmsg || ''; s.foxdelay = parseInt(kv.foxdelay, 10) || 30;
     const fx = /^(running|stopped) \((\d+) cycles\)/.exec(kv.fox || ''); s.foxRunning = fx ? fx[1] === 'running' : false; s.foxCycles = fx ? parseInt(fx[2], 10) : 0;
@@ -261,6 +262,28 @@ export class Fox {
   async foxStart()  { this._needTx('fox start'); await this._ok('fox start', 'fox start', { timeoutMs: 3000 }); this.state.foxRunning = true; this.state.foxCycles = 0; return true; }
   /** Stops the beacon. Works mid-cycle: the byte aborts the Morse at the next character. */
   async foxStop()   { const r = await this._ok('fox stop', 'fox stop', { timeoutMs: 8000 }); this.state.foxRunning = false; return parseInt(r.body.split(/\s+/)[1], 10) || 0; }
+
+  // ---- the SQ wire -------------------------------------------------------
+  /** sq() -> 'off'|'carrier'|'quiet'; sq(true|false) declares the wire present (persisted on the fox). */
+  async sq(on) {
+    if (on == null) { const v = (await this._cmd('sq', { quiet: true })).body.trim(); this.state.sqWire = v !== 'off'; this.state.sqCarrier = v === 'carrier' ? true : v === 'quiet' ? false : null; return v; }
+    const r = await this._ok(`sq ${on ? 'on' : 'off'}`, 'sq'); this.state.sqWire = !!on; if (!on) this.state.sqCarrier = null; return r.body.trim();
+  }
+  /**
+   * events() -> { now, carrier, edges: [{ ms, on }] } with the fox's own ms
+   * ticks: carrier edges the firmware timed on the SQ wire since the last
+   * call. Throws DeviceError when the wire is not enabled.
+   */
+  async events() {
+    const r = await this._cmd('events', { timeoutMs: 3000, quiet: true });
+    if (/^error:/.test(r.body.trim())) this._blocked('events', r.body.trim().replace(/^error:\s*/, ''));
+    const lines = r.body.trim().split(/\r?\n/).filter(Boolean);
+    const head = /^now (\d+) (carrier|quiet)/.exec(lines[0] || '');
+    if (!head) throw new DeviceError(`events: unexpected reply ${JSON.stringify(lines[0] || '')}`, r.body);
+    const edges = lines.slice(1).map(l => { const m = /^(\d+) ([01])$/.exec(l.trim()); return m ? { ms: +m[1], on: m[2] === '1' } : null; }).filter(Boolean);
+    this.state.sqWire = true; this.state.sqCarrier = head[2] === 'carrier';
+    return { now: +head[1], carrier: head[2] === 'carrier', edges };
+  }
 
   // ---- raw ---------------------------------------------------------------
   /** Anything else, for the console box. Classified (lastStatus) but not thrown. */

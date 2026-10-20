@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.8.0 — the SQ wire and the bench pair
+
+- **Firmware 0.4.0**: optional SQ wire on `D2` (`sq on|off`, persisted in
+  NVM); carrier edges timestamped in the main loop; `events` returns them
+  with the fox's clock. Nothing is read on D2 until `sq on`.
+- **Page**: SQ wire checkbox and carrier light in Fox configuration; while
+  the receiver (or an autoseek dwell) runs, `events` is polled once a
+  second and hardware edges feed the cycle tracker (`createEdgeFeeder`:
+  clock offset, flutter merge); the hunt panel marks "· SQ wire". RSSI
+  readings still keep the floor and peak. Firmware older than 0.4.0 shows
+  "needs firmware 0.4.0" and the checkbox stays off.
+- **Bench pair**: a second fox on another port as the beacon — callsign,
+  arm, tune (or "= receiver"), start/stop its `fox` cycle, key 5 s, tone;
+  its commands show as `[B]` in the console. In the simulation a paired
+  beacon is heard by the simulated receiver (shared air).
+- Simulation: the yagi pattern applies only during a bearing capture or
+  with a live compass, so the keyed demo fox is strong out of the box;
+  carrier detect follows the same signal model as RSSI.
+- "(settling)" now wins over "(irregular)" under four bursts.
+- Tests: 41 (SQ through the device layer, hardware-edge cycle timing, the
+  simulated pair).
+
 ## v0.7.0 — install from the page, offline, phones that scroll
 
 - **Firmware installer** on the page: band, callsign, TX gate; writes

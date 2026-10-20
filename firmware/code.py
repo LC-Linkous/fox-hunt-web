@@ -43,7 +43,7 @@ except (ImportError, AttributeError):
     NVM = None
 
 FW_NAME = "foxhunt"
-FW_VERSION = "0.3.1"
+FW_VERSION = "0.4.0"
 BOARD_NAME = "xiao-esp32c3"
 
 # ---------------------------------------------------------------- pin map
@@ -56,9 +56,14 @@ RX_Pin  = board.D7          # GPIO20  UART in from the SA868
 TX_Pin  = board.D6          # GPIO21  UART out to the SA868
 MIC_Pin = board.D1          # GPIO03  audio into the module (unused in RX)
 LED_Pin = board.D10         # status LED
+SQ_Pin  = board.D2          # GPIO04  optional wire from the SA868's SQ pad (pin 1): low = carrier
 
 # SA868 AF_OUT (module pin 3) is not routed on the fox PCB. Audio for the
 # page comes from a wire on that pad to a USB sound card, not from here.
+# SA868 SQ (pin 1, squelch detect, low when a carrier opens the squelch) is
+# not routed either; a wire from that pad to D2 lets this firmware time
+# carrier edges itself (`events`). Off until `sq on` is stored, so a fox
+# without the wire never reads a floating pin.
 
 # ---------------------------------------------------------------- bands
 # The three SA868 variants NiceRF sells. Which one is fitted cannot be
@@ -87,6 +92,7 @@ TX_PTT_LEAD_MS = 750        # key-up to first tone (the dc34fox value)
 #   8: 0xF1 magic   9: callsign length   10..25: callsign (ASCII)
 NVM_BAND_AT, NVM_BAND_MAGIC = 0, 0xF0
 NVM_CALL_AT, NVM_CALL_MAGIC, NVM_CALL_MAX = 8, 0xF1, 16
+NVM_SQ_AT, NVM_SQ_MAGIC = 28, 0xF2       # 28: magic  29: 1 = SQ wire present
 CALLSIGN_PLACEHOLDER = "N0CALL"
 
 
@@ -133,6 +139,23 @@ def nvm_write_callsign(cs):
     return False
 
 
+def nvm_read_sq():
+    try:
+        return bool(NVM and NVM[NVM_SQ_AT] == NVM_SQ_MAGIC and NVM[NVM_SQ_AT + 1] == 1)
+    except Exception:
+        return False
+
+
+def nvm_write_sq(on):
+    try:
+        if NVM:
+            NVM[NVM_SQ_AT:NVM_SQ_AT + 2] = bytes((NVM_SQ_MAGIC, 1 if on else 0))
+            return True
+    except Exception:
+        pass
+    return False
+
+
 # ---------------------------------------------------------------- state
 state = {
     "band": nvm_read_band(),    # None until the page (or a terminal) sets it
@@ -155,7 +178,12 @@ state = {
     "fox_running": False,
     "fox_next": 0,
     "fox_cycles": 0,
+    # the SQ wire
+    "sq_on": nvm_read_sq(),
+    "sq_level": None,           # True = carrier (pin low), updated by the main loop
+    "sq_events": [],            # [(ticks_ms, 1|0)] edges since the last `events`, newest last
 }
+SQ_EVENTS_MAX = 64
 if state["band"]:
     state["freq"] = BAND_DEFAULT_FREQ[state["band"]]
 
@@ -390,6 +418,37 @@ def fox_cycle():
         state["fox_running"] = False
     led.value = state["connected"]
 
+# ---------------------------------------------------------------- SQ wire
+sq = None
+
+
+def sq_setup():
+    """Pull-up input on D2 when the wire is declared present; released otherwise."""
+    global sq
+    if state["sq_on"] and sq is None:
+        sq = digitalio.DigitalInOut(SQ_Pin)
+        sq.direction = digitalio.Direction.INPUT
+        sq.pull = digitalio.Pull.UP
+        state["sq_level"] = not sq.value
+    elif not state["sq_on"] and sq is not None:
+        sq.deinit()
+        sq = None
+        state["sq_level"] = None
+        state["sq_events"] = []
+
+
+def sq_poll():
+    """Called every main-loop pass: records carrier edges with the tick they were seen."""
+    if sq is None:
+        return
+    level = not sq.value            # low = carrier
+    if level != state["sq_level"]:
+        state["sq_level"] = level
+        state["sq_events"].append((ms(), 1 if level else 0))
+        if len(state["sq_events"]) > SQ_EVENTS_MAX:
+            state["sq_events"].pop(0)
+
+
 # ---------------------------------------------------------------- shell
 PROMPT = "ch> "
 
@@ -455,6 +514,7 @@ def cmd_info(args):
     out("volume: %d" % state["volume"])
     out("rssi_cmd: %s" % state["rssi_cmd"])
     out("nvm: %s" % ("yes" if NVM else "no"))
+    out("sq: %s" % ("on %s" % ("carrier" if state["sq_level"] else "quiet") if state["sq_on"] else "off"))
     out("ptt: %s" % ("TX keyed %.1f s left" % keyed_left_s() if keyed() else "rx"))
     out("tx: %s" % ("available" if TX_ENABLED else "disabled"))
     out("armed: %s" % ("yes" if state["armed"] else "no"))
@@ -467,7 +527,7 @@ def cmd_info(args):
 
 
 def cmd_help(args):
-    out("commands: version info help band callsign tune rssi scan squelch bw volume at rx led")
+    out("commands: version info help band callsign tune rssi scan squelch bw volume at rx led sq events")
     if TX_ENABLED:
         out("transmit: tx arm|disarm|on [s]|off  tone {Hz} {ms}  morse {text}  power low|high  wpm {n}  foxmsg {text}  foxdelay {s}  fox start|stop")
     else:
@@ -800,6 +860,32 @@ def cmd_fox(args):
         out("usage: fox [start|stop]")
 
 
+def cmd_sq(args):
+    """sq -> level. sq on|off -> declare the wire present (persisted)."""
+    if not args:
+        out("off" if not state["sq_on"] else ("carrier" if state["sq_level"] else "quiet"))
+        return
+    w = args[0].lower()
+    if w not in ("on", "off"):
+        out("usage: sq on|off")
+        return
+    state["sq_on"] = (w == "on")
+    persisted = nvm_write_sq(state["sq_on"])
+    sq_setup()
+    out("%s%s" % (w, "" if persisted else " (not persisted: no nvm)"))
+
+
+def cmd_events(args):
+    """events -> 'now {ticks} carrier|quiet' then one '{ticks} 1|0' line per carrier edge since the last call."""
+    if not state["sq_on"]:
+        out("error: the SQ wire is not enabled; send `sq on` once it is soldered to D2")
+        return
+    out("now %d %s" % (ms(), "carrier" if state["sq_level"] else "quiet"))
+    for t, lvl in state["sq_events"]:
+        out("%d %d" % (t, lvl))
+    state["sq_events"] = []
+
+
 COMMANDS = {
     "version": cmd_version,
     "info": cmd_info,
@@ -815,6 +901,8 @@ COMMANDS = {
     "at": cmd_at,
     "rx": cmd_rx,
     "led": cmd_led,
+    "sq": cmd_sq,
+    "events": cmd_events,
     # transmit: all refused unless TX_ENABLED, a callsign is stored, and `tx arm` was sent
     "tx": cmd_tx,
     "tone": cmd_tone,
@@ -850,6 +938,7 @@ led = init_pin(LED_Pin, False)
 
 delay(800)                          # module power-up
 module_connect()
+sq_setup()
 
 out("")
 out("%s %s %s %s" % (FW_NAME, FW_VERSION, BOARD_NAME, module_name()))
@@ -869,6 +958,7 @@ led.value = state["connected"]      # steady LED = module answered
 
 # ---------------------------------------------------------------- loop
 while True:
+    sq_poll()
     # key-down deadline: nothing stays keyed past its timer, whatever the host does
     if keyed() and ms() >= state["keyed_until"]:
         unkey()
