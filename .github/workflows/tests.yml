@@ -1,0 +1,27 @@
+name: tests
+
+# The device layer (js/device/) against the simulated fox's byte stream. No
+# browser, no hardware; catches a broken import, a changed reply shape, or a
+# firmware command the page sends that the protocol no longer has.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  node:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Syntax check every module
+        run: for f in $(find js -name '*.js'); do node --check "$f"; done
+      - name: Device-layer tests
+        run: node --test 'tests/**/*.test.mjs'

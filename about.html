@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<!--
+  fox-hunt-web — About: what it is, what works where, what it keeps
+  SPDX-License-Identifier: GPL-2.0-only
+  Copyright (C) 2026 Lauren Linkous
+-->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>About — fox-hunt-web</title>
+<link rel="stylesheet" href="css/theme.css">
+<link rel="stylesheet" href="css/layout.css">
+<link rel="stylesheet" href="css/components.css">
+<style>
+  .about { max-width: 820px; margin: 0 auto; padding: 18px 16px 40px; }
+  .about h2 { font-size: 1.05rem; margin: 28px 0 8px; }
+  .about p, .about li { color: var(--ink-2); line-height: 1.55; }
+  .about table { border-collapse: collapse; width: 100%; font-size: .9rem; margin: 8px 0; }
+  .about th, .about td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--edge); vertical-align: top; }
+  .about th { color: var(--ink-2); font-weight: 600; }
+  .about td.yes { color: var(--ok); } .about td.no { color: var(--err); } .about td.part { color: var(--warn); }
+  .about .lead { color: var(--ink); font-size: 1.05rem; }
+</style>
+<script>try { document.documentElement.setAttribute('data-theme', JSON.parse(localStorage.getItem('fox-hunt-web.settings') || '{}').theme || 'dark'); } catch {}</script>
+</head>
+<body>
+<header class="topbar">
+  <h1>fox-hunt-web</h1>
+  <span class="status"><span id="statusText">About</span></span>
+  <span class="spacer"></span>
+  <nav><a href="./">Back to the tool</a><a href="https://github.com/LC-Linkous/fox-hunt-web">Source</a><a href="https://github.com/HamRadioVillage/dc34fox">The fox</a></nav>
+</header>
+
+<main class="about">
+<p class="lead">A browser front end for the Ham Radio Village DEF CON 34 fox — a Seeed XIAO ESP32-C3 driving a NiceRF SA868 radio module. With this project's firmware on it, the fox becomes a receiver you control from the page: tune 2 m or 70 cm, watch signal strength, scan channels, decode a fox's Morse ID and SSTV pictures from the audio, log it all. With transmit enabled in the firmware and a license, it keys, sends Morse, and runs as a beacon.</p>
+
+<h2>What works where</h2>
+<p>Connecting to a fox uses Web Serial, which only some browsers have. Everything else runs anywhere.</p>
+<table>
+<tr><th>Device</th><th>Connect to a fox</th><th>Audio decoders</th><th>Compass (bearing)</th><th>Location stamps</th></tr>
+<tr><td>Laptop or desktop · Chrome, Edge</td><td class="yes">yes</td><td class="yes">yes</td><td class="no">no compass</td><td class="part">coarse (Wi-Fi)</td></tr>
+<tr><td>Android phone or tablet · Chrome, with a USB-OTG cable</td><td class="yes">yes</td><td class="yes">yes (cable to the mic jack, or a USB sound card through an OTG hub)</td><td class="yes">yes</td><td class="yes">GPS</td></tr>
+<tr><td>ChromeOS</td><td class="yes">yes</td><td class="yes">yes</td><td class="part">usually not</td><td class="part">varies</td></tr>
+<tr><td>iPhone or iPad · Safari (Apple allows no other engine)</td><td class="no">no — Web Serial does not exist on iOS</td><td class="yes">yes</td><td class="part">after a permission tap</td><td class="yes">GPS</td></tr>
+<tr><td>Firefox, any platform</td><td class="no">no</td><td class="yes">yes</td><td class="part">varies</td><td class="part">varies</td></tr>
+</table>
+<p>The simulated fox (<em>Try without hardware</em>) and session replay work in every browser, so the page can be shown or a hunt reviewed on anything.</p>
+
+<h2>What the firmware can and cannot do</h2>
+<ul>
+<li><b>As downloaded it is receive-only.</b> <code>TX_ENABLED = False</code> at the top of <code>code.py</code>; with it false nothing in the file can key the transmitter, and no license is needed to use it.</li>
+<li>With <code>TX_ENABLED = True</code> the transmit commands exist, behind a stored callsign, per-session arming, and a timer on every key-down that the board enforces itself. It still boots in receive. A license is required.</li>
+<li>The SA868 fitted (VHF, UHF or dual-band) is a setting kept on the board; the page's <em>Module</em> dropdown sets it once.</li>
+<li>Signal strength is the module's RSSI byte, 0–255, uncalibrated: a relative "warmer / colder" instrument, not a dBm meter.</li>
+<li>The audio decoders do not use the fox's microcontroller at all: a wire from the SA868's <code>AF_OUT</code> pad to a sound card gives the page the audio. See the README for the wiring.</li>
+</ul>
+
+<h2>What the page keeps, and what it asks for</h2>
+<ul>
+<li><b>Nothing leaves the browser.</b> There is no server; the page is static files. Settings live in this browser's local storage. Logs exist only while the page is open unless you save them.</li>
+<li><b>Microphone</b> — asked for only when you start audio. The page asks for echo cancellation, automatic gain and noise suppression <em>off</em> (they ruin Morse timing and SSTV tones) and shows what the browser actually granted. Audio is decoded in memory and never stored; decoded text and pictures are saved only when you click Save.</li>
+<li><b>Location</b> — off by default. When on, a badge shows, the fix's accuracy and age are displayed, a fix older than 15 s is not used, and lat/lon/accuracy go into their own columns of the log.</li>
+<li><b>Compass</b> (bearing helper, a later version) — asked for only when you start a bearing capture.</li>
+<li><b>USB serial</b> — the browser's chooser shows the fox; the page refuses a device that does not answer like this firmware.</li>
+</ul>
+
+<h2>Credits and licenses</h2>
+<p>The page (<code>index.html</code>, <code>js/</code>, <code>css/</code>) is GPL-2.0-only and shares its console framing and page kit, byte for byte, with <a href="https://github.com/LC-Linkous/tinysa-web">tinysa-web</a> and <a href="https://github.com/LC-Linkous/nanovna-web">nanovna-web</a>. The firmware (<code>firmware/code.py</code>) is GPL-3.0-only and is written to the dc34fox board, whose attribution chain is <a href="https://github.com/HamRadioVillage/dc34fox">HamRadioVillage/dc34fox</a> ← <a href="https://github.com/c0ldbru/fox">c0ldbru/fox</a> ← Bradan Lane STUDIO ← <a href="https://github.com/N8HR/YAFB">N8HR/YAFB</a>. Not affiliated with the Ham Radio Village, NiceRF, or Seeed.</p>
+<p>Maintained by <a href="https://github.com/LC-Linkous">LC Linkous</a>. Issues and hunt-day oddities: <a href="https://github.com/LC-Linkous/fox-hunt-web/issues">the tracker</a>.</p>
+</main>
+</body>
+</html>

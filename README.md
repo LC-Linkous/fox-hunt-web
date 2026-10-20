@@ -1,0 +1,427 @@
+# fox-hunt-web
+
+A browser front end for the DEF CON 34 fox. Plug the fox in over USB, open
+the page in Chrome or Edge, click Connect: tune 2 m or 70 cm, watch signal
+strength live, scan a list of channels for the one with a fox on it, decode a
+fox's Morse ID and SSTV pictures from the audio, log it all to CSV. With the
+transmit-enabled firmware and a license, key it, send Morse, and run it as a
+beacon. Nothing to install on the computer.
+
+**Use it:** <https://lc-linkous.github.io/fox-hunt-web/>
+
+The page has a *Try without hardware* mode with a simulated fox (three
+signals on the air, one of them keyed like a real fox), so it can be previewed
+anywhere.
+
+The page is written for one piece of hardware — the Ham Radio Village DC34 fox,
+a Seeed XIAO ESP32-C3 driving a NiceRF SA868 — with any of the three SA868
+variants NiceRF sells (VHF, UHF, or dual-band). The fox needs this repo's
+firmware loaded once; see [Firmware](#firmware) at the bottom.
+
+The firmware ships **receive-only**: `TX_ENABLED = False` at the top of
+`code.py`, and with it false nothing in the file can drive PTT low. Setting it
+`True` adds the transmit commands behind three more gates (a stored callsign,
+arming the session, a timer on every key-down). The board boots in receive
+either way. See [Transmit](#transmit).
+
+## How it fits together
+
+The fox's ESP32-C3 is a bridge. The SA868 does the radio work — it is a
+complete FM transceiver with a numeric signal-strength readback — and the
+ESP32 passes commands and answers between USB and the module's UART.
+
+```
+                       DC34 fox
+   ┌──────────────────────────────────────────────┐
+   │  XIAO ESP32-C3              NiceRF SA868      │
+   │  ┌────────────────┐  UART   ┌──────────────┐  │     antenna
+   │  │ firmware/      │ 9600 8N1│ FM receiver  ├──┼─────┤
+   │  │ code.py        ├────────►│ VHF, UHF or  │  │
+   │  │  band, callsign│◄────────┤ both         │  │
+   │  │  in NVM        │ AT+RSSI?│              │  │
+   │  │ "ch>" console  │         │ AF_OUT ──────┼──┼── (pad, not routed)
+   │  └───────┬────────┘         └──────────────┘  │
+   │          │ USB CDC                             │
+   └──────────┼───────────────────────────────────┘
+              │
+     Chrome / Edge, Web Serial
+   ┌──────────┴───────────────────────┐
+   │ fox-hunt-web                     │
+   │  js/device/ shell-link.js        │  ← byte-identical to tinysa-web
+   │             serial-link.js       │  ← USB filter only
+   │             fox.js  models.js    │  ← this repo
+   │             demo-link.js         │  ← the simulated fox
+   │  js/plot/   rssi vs time, scan   │
+   │  js/ui/     sidebar, console     │  ← shared kit
+   │  CSV / JSON export               │
+   └──────────────────────────────────┘
+```
+
+- **The firmware speaks the tinySA console shape** — `cmd\r\n` in, echo plus
+  reply plus `ch> ` out — so the console framing, console drawer and sidebar
+  from [tinysa-web](https://github.com/LC-Linkous/tinysa-web) are reused
+  unchanged. What is new is `js/device/fox.js` and `models.js` (what the
+  numbers mean), the simulated fox, and the two plots.
+- **The contract is `PROTOCOL.md`.** The page, the firmware and the simulated
+  fox are all written to it.
+- **One firmware for every fox.** The SA868 cannot report which band it is, so
+  the band is a setting: pick it once from the *Module* dropdown and the
+  firmware keeps it in the ESP32's NVM across reboots and reflashes. The
+  tunable range, the fox-frequency presets and the scan defaults follow.
+- **Signal strength is the SA868's RSSI byte**, 0–255, uncalibrated and
+  roughly logarithmic. It is a relative instrument: good for "warmer / colder"
+  and for comparing channels, not a dBm meter. It also saturates close to a
+  transmitter, which is why fox hunters carry attenuators.
+- **Audio is not on the microcontroller.** The SA868's audio output (module
+  pin 3, `AF_OUT`) is not routed on the fox PCB. A wire from that pad to a
+  cheap USB sound card gives the computer the demodulated audio, and the
+  page decodes CW and SSTV from it with the Web Audio API — any browser, no
+  firmware involved. The firmware's `volume` setting is that pad's level.
+  See [Audio](#audio).
+
+## What it does (v0.5)
+
+- **Connect / detect** — reads `version` and `info`, refuses a port that is not
+  a fox running this firmware, shows the module's own version string and
+  whether it answered its handshake.
+- **Module** — the SA868 variant, from the fox or set from the dropdown
+  (VHF, UHF, dual-band). Sent once, kept on the board.
+- **Receiver** — tune by number or preset (146.565, 433.900, band edges),
+  12.5 / 25 kHz bandwidth, squelch 0–8, audio level; live RSSI at ~10 Hz
+  plotted against time with max hold; readings per second.
+- **Scan** — start / stop / step across either band, drawn as a per-channel
+  bar strip with the strongest marked, or as a **waterfall** (one row per
+  scan, newest at the top) that shows which channels are alive over minutes;
+  click a bar or a cell to tune there; continuous mode; presets ±150 kHz
+  around each fox frequency. A heat strip under the signal-strength plot is
+  the single-channel version.
+- **Hunt mode** — a Bench / Hunt switch in the top bar. Hunt is one
+  column: the RSSI readout and the countdown to the next burst huge, Start /
+  Seek / Skip / Lock / Pin and the attenuator under them, the signal plot,
+  the hunt board, the last decoded Morse. Made for a phone held next to a
+  yagi; remembered across loads.
+- **Autoseek** — steps the Scan section's channel list like a radio's SEEK:
+  stops where RSSI rises over that channel's own learned floor by a margin
+  (default 20 counts), listens while it stays up, moves on when it drops or
+  after the dwell limit; Skip and Lock; pins what it stops on. Each channel
+  keeps its own floor, so a permanently noisy one doesn't keep stopping the
+  seek.
+- **Fox cycle timing** — from threshold crossings on the tuned channel: how
+  long the fox keys and how often; a countdown to the next burst once two
+  have been heard (a burst already in progress when listening starts is not
+  counted as an onset). Shown in the Receiver section and, huge, in Hunt.
+- **CW identification** — a callsign decoded by the audio path while tuned
+  pins and labels that channel on the board.
+- **Hunt board** — the foxes in play: frequency, ID, last heard, max, next
+  burst with the period, a trend sparkline, tune and unpin. Pin from the
+  receiver, from a scan's strongest channel, by typing a frequency, or let
+  autoseek do it. Saved with the session, including each fox's learned
+  cycle.
+- **Attenuator bookkeeping** — a preset list (3–40 dB) or a custom value.
+  The RSSI byte is logged as read; the attenuation goes in its own column
+  and a change marks the plot and resets max hold. Default: none.
+- **Recording and sessions** — timestamped readings and scans, saved as CSV
+  (`timestamp_iso,t_ms,frequency_mhz,rssi,lat,lon,accuracy_m`) or as one
+  session JSON with the settings and the fox's identity. **Load session**
+  replays it into the windows with a scrub bar at 1–30×; the fox is left
+  alone, a REPLAY badge shows, and *Live* returns to it.
+- **Location** — off by default. When on, a GPS badge shows, the fix's
+  accuracy and age are displayed, a fix older than 15 s is not used, and
+  lat/lon/accuracy stamp every reading and scan.
+- **Export** — PNG of either plot, CSV of the scan on screen.
+- **Fox configuration** — firmware and module versions, which RSSI command the
+  module speaks, whether NVM is present, and the callsign (stored, unused by
+  this build).
+- **Console** — the raw serial exchange, resizable drawer, command history,
+  log download (commands only, or commands + replies, timestamped). The `at`
+  command passes a line straight to the SA868 so you can watch the module
+  answer.
+- **Audio** — pick the sound-card input, start; the Audio window shows the
+  passband spectrum with the CW pitch and the SSTV tones marked, the decoded
+  Morse text with its element stream, and the SSTV picture as it draws.
+  CW: Goertzel detector, adaptive threshold, follows the sender's speed and
+  (optionally) pitch; save the text. SSTV: Martin M1/M2, Scottie S1/S2,
+  Robot36 from the VIS header, per-line sync tracking; save the PNG.
+- **Transmit** (TX-enabled firmware only) — arm, hold-to-key with a timer,
+  test tone, Morse from text with the air time shown, the fox beacon
+  (message and interval, runs on the board), power low/high, WPM. The
+  receiver and scan pause while anything is on the air.
+- **Settings** — dark / light, trace colours, waterfall palette, heat strip,
+  seconds of history on screen, RSSI axis, amateur-allocations-only tuning
+  (off: the module's full range).
+- **About** (`about.html`) — what works on which device, what the firmware
+  can and can't do, what the page keeps and asks for.
+
+See `ROADMAP.md` for what comes next: the bearing helper, the bench pair,
+the SQ wire.
+
+## Hardware
+
+Exactly one board, exactly these pins. This is the dc34fox pin map; the
+firmware is not configurable because it is not meant to be general.
+
+| Function | XIAO pin | GPIO | In this firmware |
+|---|---|---|---|
+| PTT | `D3` | GPIO05 | held **high** (receive) |
+| PD | `D4` | GPIO06 | held high (module awake) |
+| HL | `D5` | GPIO07 | low (unused in receive) |
+| UART RX (from SA868) | `D7` | GPIO20 | 9600 8N1 |
+| UART TX (to SA868) | `D6` | GPIO21 | 9600 8N1 |
+| MIC | `D1` | GPIO03 | held low (unused in receive) |
+| Status LED | `D10` | GPIO10 | on when the module answered |
+
+| SA868 fitted | Module range | Page default (amateur) | Fox frequency |
+|---|---|---|---|
+| VHF | 134–174 MHz | 144–148 MHz | 146.565 |
+| UHF | 400–480 MHz | 420–450 MHz | 433.900 |
+| dual-band | both | both | both |
+
+Connect the antenna (or a dummy load) before powering the board, every time.
+
+### AF_OUT for the audio decoders
+
+The SA868's pin 3, `AF_OUT`, is not connected on the fox PCB. Solder a wire
+to the pad and run it, with a ground, to a USB sound card's line or mic
+input through a 10 kΩ series resistor (the pad gives about 700 mV into
+200 Ω; a mic input wants less). Set the sound card's input gain so the
+page's *Level* readout sits around −20 to −6 dBFS during a signal, and set
+the fox's `volume` (Receiver section) to taste. The browser needs microphone
+permission once; after that the input shows up by name in the Audio section.
+The audio path is independent of the serial link, so it also works with any
+other receiver's speaker jack.
+
+## Layout
+
+```
+┌───────────────────────────────────────────────────────────────────┐
+│ fox-hunt-web [Connect] [Try without hardware] Module ▾  ● status  │
+├────────────┬──────────────────────────────────────────────────────┤
+│ Receiver   │ ┌ Signal strength ────────────┐ ┌ Channels ────────┐ │
+│  freq Tune │ │ RSSI vs time, max hold      │ │ bar per channel, │ │
+│  presets   │ │                             │ │ strongest marked │ │
+│  bw sq vol │ └─────────────────────────────┘ └──────────────────┘ │
+│  [Start]   ├──────────────────────────────────────────────────────┤
+│  now · max │ Fox console ▲                  Log ▾ [⤓][copy]       │
+│ Scan       │ > rssi 10                                            │
+│ Recording  │ 0 41 / 101 43 / …  (1.1 s)                           │
+│ Export     │ ┌──────────────────────────┐ [Send]                  │
+│ Fox config │ │ type a command           │                         │
+│ Settings   │                                                      │
+└────────────┴──────────────────────────────────────────────────────┘
+```
+
+## What's in the repo
+
+| Path | What it is |
+|---|---|
+| `index.html` | markup only; native ES modules, no build step |
+| `PROTOCOL.md` | the serial contract between the page and the firmware |
+| `firmware/code.py` | CircuitPython firmware for the fox (the download in the page's footer) |
+| `js/device/shell-link.js`, `serial-link.js` | console framing, Web Serial transport |
+| `js/device/fox.js`, `models.js` | the device API and the three band envelopes |
+| `js/device/demo-link.js` | the simulated fox: same byte stream, three signals, a simulated transmitter at 1/10 real time |
+| `js/plot/rssi.js`, `scan.js`, `waterfall.js`, `audio.js` | the plots; `palettes.js` is tinysa-web's |
+| `js/hunt.js` | cycle timing, autoseek decisions, the board, callsign matching — no DOM, no device |
+| `js/ui/session.js`, `geo.js` | session save/parse and replay; location stamps |
+| `about.html` | platforms, what the firmware does, what the page keeps |
+| `ROADMAP.md` | the plan, with the decisions recorded |
+| `js/audio/capture.js`, `fft.js`, `cw.js`, `sstv.js` | sound-card capture, FFT/Goertzel, the Morse decoder, the SSTV decoder and encoder |
+| `js/ui/`, `css/` | sidebar, console, settings, recorder, export; styles |
+| `tests/device.test.mjs`, `audio.test.mjs`, `session.test.mjs`, `hunt.test.mjs` | the device layer over the simulated fox; the decoders against synthesized audio; session round trip and replay; the hunt logic against a synthetic fox (`node --test`) |
+| `.github/workflows/pages.yml` | publishes the page and the firmware to GitHub Pages |
+| `.github/workflows/tests.yml` | syntax-checks every module and runs the tests |
+
+`js/device/shell-link.js`, `js/ui/sidebar.js`, `js/ui/console.js`,
+`js/ui/export.js`, `js/plot/common.js`, `js/plot/palettes.js`,
+`css/theme.css`, `css/layout.css` and `css/components.css` are kept
+byte-identical to tinysa-web, same rule as
+between tinysa-web and nanovna-web: a diff between repos is the list of
+instrument-specific code. `serial-link.js` differs by the USB filter only
+(the fox is an Espressif USB-Serial/JTAG device, not an STM32).
+
+## Talking to the fox without the page
+
+Any serial terminal works (any baud, line ending `\r\n`). The firmware echoes
+the line and ends every reply with `ch> `.
+
+```
+ch> version
+foxhunt 0.2.0 xiao-esp32c3 sa868-dual
+ch> tune 146.565
+146.5650
+ch> rssi
+42
+ch> scan 146.400 146.600 25
+146.4000 31
+146.4250 30
+…
+ch> at AT+VERSION
++VERSION:SA868S-...
+```
+
+Full command list in [PROTOCOL.md](PROTOCOL.md), or type `help`. Thonny
+works too (it is how the fox is normally programmed); you'll see each line
+twice because Thonny echoes locally and so does the firmware, and Ctrl+C still
+drops you to the REPL.
+
+## On a phone
+
+Chrome for Android has Web Serial: a USB-OTG adapter (or a C-to-C cable on
+a phone that does host mode) into the fox's USB-C, open the page, Connect,
+pick the fox in the chooser. The fox draws under 100 mA in receive. The
+*Hunt* in the top bar gives the one-column layout for one-handed use. iPhones and iPads cannot connect (no Web Serial in
+Safari, and Apple allows no other engine); they get the audio decoders, the
+simulated fox and session replay. The About page has the full table.
+
+## Running locally
+
+Module scripts don't load from `file://` in Chrome, so serve the folder:
+
+```
+python -m http.server 8000
+# then open http://localhost:8000/
+```
+
+Web Serial works on `localhost`, so a real fox can be used this way. The
+tests need Node 22: `node --test 'tests/**/*.test.mjs'`.
+
+## Transmit
+
+Off by default, on purpose. To turn it on, open `firmware/code.py`, change
+`TX_ENABLED = False` to `True`, and save it to the board again. Then, in
+this order:
+
+1. Store your callsign (Fox configuration section). The firmware refuses to
+   arm while it is `N0CALL`, and every beacon cycle sends it first.
+2. Tick the arming box in the Transmit section. That sends `tx arm`; it
+   lasts until you disconnect or the board reboots.
+3. Key, send a tone, send Morse, or start the beacon.
+
+What the firmware enforces, regardless of the page:
+
+- Every key-down has a deadline: `tx on` defaults to 10 s (cap 60); Morse and
+  beacon cycles key for the text's air time plus 2 s. The main loop unkeys
+  at the deadline whatever the host is doing, including if the USB cable
+  falls out mid-sentence.
+- The beacon stops itself if the transmitter stops being allowed (disarm,
+  `rx`), and a byte on the serial port aborts a Morse transmission at the
+  next character, so `fox stop` works mid-cycle.
+- `rx` is always safe: stops the beacon, unkeys, PTT high. The page sends
+  it on disconnect.
+
+What the page does on top: the Key button is hold-to-key (release sends
+`tx off`; the deadline is the backstop), the receiver and scan loops pause
+while anything is on the air, the TX badge pulses, and the Transmit
+section is hidden entirely when the firmware reports `tx: disabled`.
+
+The beacon firmware in `dc34fox` is still the simpler thing for a hunt: it
+needs no computer. This one is for the bench, for a fox you can stop and
+retune from the page, and for the day the SSTV encoder gets an audio path.
+
+## Audio
+
+Capture runs through an `AudioWorklet` with echo cancellation, automatic
+gain and noise suppression off (all three destroy Morse timing and SSTV
+tones). The Audio section shows the permission state, what was asked for,
+and what the browser actually granted — a setting left on is flagged in
+red, because that is the usual reason a decoder "doesn't work". Audio is
+decoded in memory and never stored. Both decoders run on every block; the
+Audio window's three tabs show the passband, the Morse text, and the
+picture.
+
+- **CW** — a Goertzel detector at the pitch (800 Hz by default, the dc34fox
+  tone), a 10 ms block, a threshold halfway between the running noise floor
+  and the running peak with 6 dB of hysteresis, and an element clock that
+  follows the sender. It needs about 12 dB between floor and peak to decode
+  at all, and it drops rather than guesses the character during which the
+  pitch moved. Expect clean copy of a fox ID; expect nothing from weak HF
+  signals, which is not what it is for.
+- **SSTV** — VIS header (1900 Hz leader, 1200 Hz start bit, eight bits at
+  1100/1300 Hz, parity checked), then the mode's line timing from one table
+  that the encoder in the tests is also built from. Each line's 1200 Hz
+  sync pulse is found near where the timing predicts it and the decoder
+  re-anchors there, so a sound-card clock a little off does not slant the
+  picture. Pixel frequency is read with a 1–3 ms Hann window zero-padded
+  into a 512-point FFT and parabolic interpolation.
+
+Both are tested against synthesized audio (`tests/audio.test.mjs`): a
+Morse ID in 15 dB of noise, and Martin M1, Scottie S2 and Robot36 pictures
+encoded and decoded through the same tables, with a mean pixel error bound.
+
+## Safety behaviour
+
+- Shipped firmware: `TX_ENABLED = False`. PTT is set high before anything
+  else and never set low; the transmit commands answer with an error.
+- With transmit enabled: boots in receive, unarmed; callsign gate; arming
+  per session; a deadline on every key-down enforced by the main loop.
+- Loading this firmware replaces the beacon firmware. The board and
+  callsign settings stay in NVM across the swap.
+- The page sends `rx` on disconnect when transmit is available, so a page
+  closed mid-beacon leaves a silent fox.
+
+## Firmware
+
+The fox needs `firmware/code.py` from this repo loaded once. The XIAO
+ESP32-C3 has no USB drive, so there is no `.uf2` to drag; the file is saved to
+the board with Thonny, the same way the fox is normally programmed.
+
+1. Download **`code.py`**: the link in the page's footer serves the version
+   the page was built against; the
+   [latest release](https://github.com/LC-Linkous/fox-hunt-web/releases/latest)
+   carries the same file. It is receive-only as downloaded; see
+   [Transmit](#transmit) to enable the transmitter.
+2. If the board is not already running CircuitPython, flash it first:
+   [dc34fox, Step 1](https://github.com/HamRadioVillage/dc34fox#step-1--flash-circuitpython)
+   covers it (browser tool or `esptool`, `.bin` from
+   <https://circuitpython.org/board/seeed_xiao_esp32c3/>). A board that beacons
+   already has it.
+3. Open Thonny, **Run → Configure interpreter… → CircuitPython (generic)**, pick
+   the fox's port.
+4. Open the downloaded `code.py`, **File → Save As… → CircuitPython device**,
+   save as exactly **`code.py`** at the device root (it replaces the beacon
+   firmware — keep a copy of that if you want it back).
+5. **Ctrl+D** in the shell. A healthy first boot prints
+   `foxhunt 0.2.0 xiao-esp32c3 sa868-unset` and
+   `SA868 ready; module band not set yet`, then `ch> `. The status LED
+   comes on steady once the module has answered.
+6. **Disconnect Thonny** (it holds the port), open the page, click Connect,
+   and pick the SA868 fitted to your fox from the *Module* dropdown. That is
+   sent once and kept on the board; the next boot says `sa868-dual` (or
+   `-vhf`, `-uhf`) and the page needs no prompting.
+
+Going back to the stock beacon: save `dc34fox`'s `code.py` over it. The
+band and callsign stay in NVM for the next time.
+
+### Releasing
+
+Releases are tagged `vX.Y.Z` and carry `code.py` as an asset. Before tagging,
+make `FW_VERSION` in `firmware/code.py`, `FW_NEEDED` in `js/main.js`,
+`FIRMWARE_FLOOR` in `js/device/models.js` (if the protocol changed) and the
+simulated fox's `version` reply agree, run the tests, and add a
+`CHANGELOG.md` entry. The Pages workflow stamps the footer date from the
+commit.
+
+## Contributing
+
+Bug reports and hunt-day oddities welcome — see
+[CONTRIBUTING.md](CONTRIBUTING.md) and the issue templates. Attach a console
+log (Fox console → Log → commands + replies → Download) to anything
+protocol-related; it is the diagnostic.
+
+## License
+
+The page (`index.html`, `js/`, `css/`) is **GPL-2.0-only**, the same as
+tinysa-web and nanovna-web, so the shared files stay byte-identical.
+
+The firmware (`firmware/code.py`) is **GPL-3.0-only**: it is written to the
+dc34fox board, follows that firmware's pin map and module setup, and the
+attribution chain for the fox hardware is GPL-3.0
+([HamRadioVillage/dc34fox](https://github.com/HamRadioVillage/dc34fox) ←
+[c0ldbru/fox](https://github.com/c0ldbru/fox) ← Bradan Lane STUDIO ←
+[N8HR/YAFB](https://github.com/N8HR/YAFB)). The two halves are separate
+programs that talk over a serial port, which is why they can carry different
+licenses.
+
+fox-hunt-web is not affiliated with the Ham Radio Village, NiceRF, or Seeed.
+A license is not required to receive; it is required to transmit, and this
+build cannot.

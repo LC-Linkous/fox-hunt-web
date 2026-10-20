@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<!--
+  fox-hunt-web — the DEF CON 34 fox as a receiver, from the browser
+  SPDX-License-Identifier: GPL-2.0-only
+  Copyright (C) 2026 Lauren Linkous
+  Source and license: https://github.com/LC-Linkous/fox-hunt-web
+  Markup only. Styles in css/, behaviour in js/ (ES modules — serve over http, not file://).
+-->
+<html lang="en" data-theme="dark" data-traces="instrument">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fox-hunt-web</title>
+<meta name="description" content="Use a DEF CON 34 fox (XIAO ESP32-C3 + SA868) from the browser over USB: tune 2 m or 70 cm, watch signal strength live, scan channels for a fox, decode CW and SSTV from the audio, log to CSV; transmit with the TX-enabled firmware.">
+<link rel="stylesheet" href="css/theme.css">
+<link rel="stylesheet" href="css/layout.css">
+<link rel="stylesheet" href="css/components.css">
+<link rel="stylesheet" href="css/fox.css">
+</head>
+<body>
+
+<header class="topbar">
+  <h1>fox-hunt-web</h1>
+  <button class="btn primary" id="connectBtn">Connect to fox</button>
+  <button class="btn" id="demoBtn" aria-pressed="false">Try without hardware</button>
+  <label class="row" style="gap:6px"><span class="suffix">Module</span>
+    <select id="bandSel" aria-label="SA868 band fitted" title="Which SA868 is on the board. Sent to the fox once and kept in its NVM.">
+      <option value="auto">From the fox</option>
+      <option value="vhf">SA868 VHF (2 m)</option>
+      <option value="uhf">SA868 UHF (70 cm)</option>
+      <option value="dual">SA868 dual-band</option>
+    </select>
+  </label>
+  <div class="views mode-tabs" role="tablist" aria-label="Layout">
+    <button class="btn small" id="modeBench" role="tab" aria-pressed="true" title="Every section and window">Bench</button>
+    <button class="btn small" id="modeHunt" role="tab" aria-pressed="false" title="One column: readout, countdown, board. For a phone and a yagi.">Hunt</button>
+  </div>
+  <span class="status" id="status"><span class="dot"></span><span id="statusText">Not connected</span></span>
+  <span class="badge" id="rxBadge" hidden title="PTT is held high by the firmware; this build cannot transmit">RX only</span>
+  <span class="badge tx" id="txBadge" hidden>● TX</span>
+  <span class="badge rec" id="recBadge" hidden>● REC</span>
+  <span class="badge" id="geoBadge" hidden title="Location stamping is on">⌖ GPS</span>
+  <span class="badge warn" id="replayBadge" hidden title="Showing a loaded session, not the fox">▶ REPLAY</span>
+  <span class="spacer"></span>
+  <nav>
+    <a href="about.html">About</a>
+    <a href="https://github.com/LC-Linkous/fox-hunt-web">Source</a>
+    <a href="https://github.com/HamRadioVillage/dc34fox">The fox</a>
+    <a href="https://lc-linkous.github.io/">Portfolio</a>
+  </nav>
+</header>
+<p class="notice" id="noSerial" hidden>This browser can't open USB serial ports, so a fox can't be connected here. Serial works in <b>Chrome</b> or <b>Edge</b> on a laptop or desktop, and in <b>Chrome for Android</b> with a USB-OTG cable; it does not exist on iPhone or iPad. The audio decoders, session replay and the simulated fox work here. <a href="about.html">About → platforms</a>.</p>
+
+<div class="app">
+  <!-- ================================================================ sidebar -->
+  <aside class="sidebar" id="sidebar" aria-label="Controls">
+
+    <section data-section="receiver">
+      <h2><button type="button" aria-expanded="true">Receiver</button></h2>
+      <div class="body">
+        <div class="field"><label for="freq">Frequency</label>
+          <div class="row"><input type="number" id="freq" value="146.565" min="134" max="480" step="0.0125"><span class="suffix">MHz</span><button class="btn small primary" id="tuneBtn" disabled>Tune</button></div>
+          <p class="hint" id="bandHint">Tunable range appears once a fox is connected.</p></div>
+        <div class="field"><span class="label">Fox frequencies</span><div class="pills" id="presets"></div></div>
+        <div class="two-col">
+          <div class="field"><label for="bwSel">Bandwidth</label><select id="bwSel" style="width:100%" disabled><option value="0">12.5 kHz</option><option value="1" selected>25 kHz</option></select></div>
+          <div class="field"><label for="sqSel">Squelch</label><select id="sqSel" style="width:100%" disabled><option>0</option><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option></select></div>
+        </div>
+        <div class="field"><label for="volSel">Audio level (AF_OUT)</label><select id="volSel" style="width:100%" disabled><option>1</option><option>2</option><option>3</option><option>4</option><option selected>5</option><option>6</option><option>7</option><option>8</option></select>
+          <p class="hint">The SA868's own volume setting. It only matters once a wire is on the module's AF_OUT pad.</p></div>
+        <div class="field"><label for="attenSel">Attenuator in line</label>
+          <div class="row"><select id="attenSel" style="width:100%"><option value="0">none</option><option value="3">3 dB</option><option value="6">6 dB</option><option value="10">10 dB</option><option value="20">20 dB</option><option value="30">30 dB</option><option value="40">40 dB</option><option value="custom">custom…</option></select><input type="number" id="attenCustom" value="0" min="0" max="120" step="1" style="max-width:80px" hidden><span class="suffix">dB</span></div>
+          <p class="hint">Bookkeeping, not a correction: the RSSI byte is logged as read, the attenuation goes in its own column, and a change marks the plot. Switch it in when the byte pins near 255 close to a fox.</p></div>
+        <div class="stack" style="margin-top:12px">
+          <button class="btn primary block" id="liveBtn" disabled aria-pressed="false">Start receiver</button>
+        </div>
+        <div class="readout">
+          <div class="tile"><div class="lbl">RSSI now</div><div class="big dim" id="rssiNow">—</div></div>
+          <div class="tile"><div class="lbl">Max since start</div><div class="big dim" id="rssiMax">—</div></div>
+        </div>
+        <div class="tools"><button class="btn small" id="maxResetBtn" disabled>Reset max</button><button class="btn small" id="oneBtn" disabled title="One rssi reading">Read once</button></div>
+        <dl class="kv">
+          <dt>Tuned</dt><dd id="tunedNow">—</dd>
+          <dt>Rate</dt><dd id="rateNow">—</dd>
+          <dt>Fox cycle</dt><dd id="cycleNow">—</dd>
+          <dt>Next burst</dt><dd id="cycleNext">—</dd>
+        </dl>
+        <div class="tools"><button class="btn small" id="pinBtn" disabled title="Put the tuned frequency on the hunt board">Pin to board</button></div>
+      </div>
+    </section>
+
+    <section data-section="scan">
+      <h2><button type="button" aria-expanded="false">Scan</button></h2>
+      <div class="body">
+        <p class="hint" style="margin:0 0 8px">Steps the receiver across a channel list and reads RSSI on each. Click a bar to tune there. About 150 ms per channel; 128 channels at most.</p>
+        <div class="two-col">
+          <div class="field"><label for="scanStart">Start</label><div class="row"><input type="number" id="scanStart" value="146.400" step="0.0125"><span class="suffix">MHz</span></div></div>
+          <div class="field"><label for="scanStop">Stop</label><div class="row"><input type="number" id="scanStop" value="146.700" step="0.0125"><span class="suffix">MHz</span></div></div>
+        </div>
+        <div class="field"><label for="scanStep">Step</label><select id="scanStep" style="width:100%"><option value="12.5" selected>12.5 kHz</option><option value="25">25 kHz</option><option value="50">50 kHz</option><option value="100">100 kHz</option></select>
+          <p class="hint" id="scanCount">25 channels, about 4 s</p></div>
+        <div class="pills" id="scanPresets"></div>
+        <div class="stack" style="margin-top:12px">
+          <button class="btn primary block" id="scanBtn" disabled>Scan once</button>
+          <button class="btn block" id="scanLoopBtn" disabled aria-pressed="false">Scan continuously</button>
+        </div>
+        <dl class="kv">
+          <dt>Strongest</dt><dd id="scanPeak">—</dd>
+          <dt>Last scan</dt><dd id="scanTime">—</dd>
+        </dl>
+        <div class="tools" style="margin-top:6px"><button class="btn small" id="tunePeakBtn" disabled>Tune to strongest</button><button class="btn small" id="pinPeakBtn" disabled title="Put the strongest channel on the hunt board">Pin strongest</button></div>
+        <span class="label group">Autoseek</span>
+        <p class="hint" style="margin:0 0 6px">Steps the channel list above like a radio's SEEK: stops where RSSI rises over that channel's own floor by the margin, listens while it stays up, moves on when it drops or after the dwell limit. The CW decoder identifies what it hears.</p>
+        <div class="two-col">
+          <div class="field"><label for="seekMargin">Stop at</label><div class="row"><input type="number" id="seekMargin" value="20" min="5" max="120" step="5"><span class="suffix">counts over floor</span></div></div>
+          <div class="field"><label for="seekDwell">Dwell up to</label><div class="row"><input type="number" id="seekDwell" value="30" min="5" max="300" step="5"><span class="suffix">s</span></div></div>
+        </div>
+        <label class="row check"><input type="checkbox" id="seekPin" checked> <span>Pin every channel it stops on to the hunt board</span></label>
+        <div class="stack" style="margin-top:8px"><button class="btn primary block" id="seekBtn" disabled aria-pressed="false">Seek</button></div>
+        <div class="tools"><button class="btn small" id="seekSkipBtn" disabled title="Move on now">Skip</button><button class="btn small" id="seekLockBtn" disabled aria-pressed="false" title="Stay on this channel until unlocked">Lock</button><span class="hint" id="seekStatus" style="align-self:center"></span></div>
+      </div>
+    </section>
+
+    <section data-section="transmit" id="txSection">
+      <h2><button type="button" aria-expanded="false">Transmit</button></h2>
+      <div class="body">
+        <p class="hint" id="txDisabledNote">This fox is running the receive-only build. To transmit, set <code>TX_ENABLED = True</code> at the top of <code>code.py</code> and save it to the board again; the board still boots in receive and refuses to key until a callsign is stored and this section is armed. A license is required.</p>
+        <div id="txControls" hidden>
+          <label class="field" style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" id="txArm" style="margin-top:3px"><span>I hold an amateur radio license, the callsign below is mine or my event's, and an antenna or dummy load is on the RF port. <span class="hint">Sends <code>tx arm</code>; arming lasts until disconnect or reboot.</span></span></label>
+          <dl class="kv"><dt>Callsign</dt><dd id="txCallsign">—</dd><dt>State</dt><dd id="txState">—</dd></dl>
+          <div class="two-col">
+            <div class="field"><label for="txPower">Power</label><select id="txPower" style="width:100%" disabled><option value="low">low (~25 dBm)</option><option value="high">high (~2 W)</option></select></div>
+            <div class="field"><label for="txWpm">Morse WPM</label><input type="number" id="txWpm" value="12" min="5" max="35" step="1" style="width:100%" disabled></div>
+          </div>
+          <span class="label group">Key</span>
+          <div class="tools">
+            <button class="btn" id="keyBtn" disabled title="Hold to key the carrier (tx on 10 / tx off). The firmware unkeys at 10 s on its own.">Hold to key</button>
+            <button class="btn small" id="toneBtn" disabled title="tone 800 500: one half-second tone">Test tone</button>
+            <span class="hint" id="keyTimer" style="align-self:center"></span>
+          </div>
+          <span class="label group">Morse</span>
+          <div class="row"><input type="text" id="morseText" placeholder="N0CALL FOX" maxlength="64" style="text-transform:uppercase" disabled><button class="btn small" id="morseBtn" disabled>Send</button></div>
+          <p class="hint" id="morseEst">Air time appears as you type. Nothing is prepended: put your callsign in the text.</p>
+          <span class="label group">Fox beacon</span>
+          <p class="hint" style="margin:0 0 6px">Each cycle sends <code>&lt;callsign&gt; &lt;message&gt;</code> in Morse, then waits. Runs on the board; the page only starts and stops it. The receiver and scan pause while it runs.</p>
+          <div class="field"><label for="foxMsg">Message</label><input type="text" id="foxMsg" value="FOX" maxlength="40" style="text-transform:uppercase;width:100%" disabled></div>
+          <div class="field"><label for="foxDelay">Seconds between cycles</label><input type="number" id="foxDelay" value="30" min="5" max="600" step="5" style="width:100%" disabled></div>
+          <div class="stack"><button class="btn primary block" id="foxBtn" disabled aria-pressed="false">Start beacon</button></div>
+          <dl class="kv"><dt>Beacon</dt><dd id="foxStatusLine">stopped</dd></dl>
+        </div>
+        <p class="hint" id="txStatus"></p>
+      </div>
+    </section>
+
+    <section data-section="audio">
+      <h2><button type="button" aria-expanded="false">Audio</button></h2>
+      <div class="body">
+        <p class="hint" style="margin:0 0 8px">The SA868's AF_OUT pad → a USB sound card → this page. Decodes a fox's Morse ID and SSTV pictures in the browser; the fox firmware is not involved.</p>
+        <div class="field"><label for="audioDev">Input</label><div class="row"><select id="audioDev" style="width:100%"><option value="">Default input</option></select><button class="btn small" id="audioRefresh" title="Re-list inputs (labels appear after the first permission)">↻</button></div></div>
+        <div class="stack"><button class="btn primary block" id="audioBtn" aria-pressed="false">Start audio</button></div>
+        <dl class="kv"><dt>Permission</dt><dd id="audioPerm">—</dd><dt>Input</dt><dd id="audioInfo">—</dd><dt>Level</dt><dd id="audioLevel">—</dd><dt>Processing</dt><dd id="audioProc">asks for: echo cancellation off, auto gain off, noise suppression off, mono, 48 kHz</dd></dl>
+        <p class="hint">Audio is decoded in memory and never stored; the decoded text and pictures are saved only when you click Save. If the browser grants a setting the page didn't ask for (an automatic gain, say), it is shown above in red — that is the usual reason a decoder "doesn't work".</p>
+        <span class="label group">CW</span>
+        <div class="two-col">
+          <div class="field"><label for="cwTone">Pitch</label><div class="row"><input type="number" id="cwTone" value="800" min="300" max="1500" step="10"><span class="suffix">Hz</span></div></div>
+          <div class="field"><label class="row check" style="margin-top:22px"><input type="checkbox" id="cwAuto" checked> <span>Follow the pitch</span></label></div>
+        </div>
+        <dl class="kv"><dt>Speed</dt><dd id="cwWpm">—</dd><dt>Signal</dt><dd id="cwSignal">—</dd></dl>
+        <div class="tools"><button class="btn small" id="cwClearBtn">Clear text</button><button class="btn small" id="cwSaveBtn" disabled>Save text</button></div>
+        <span class="label group">SSTV</span>
+        <p class="hint" style="margin:0 0 6px">Martin M1 / M2, Scottie S1 / S2, Robot36. The mode comes from the VIS header; the picture draws line by line in the Audio window.</p>
+        <dl class="kv"><dt>Status</dt><dd id="sstvStatus">waiting for a VIS header</dd></dl>
+        <div class="tools"><button class="btn small" id="sstvSaveBtn" disabled>Save picture PNG</button><button class="btn small" id="sstvResetBtn">Reset</button></div>
+      </div>
+    </section>
+
+    <section data-section="board">
+      <h2><button type="button" aria-expanded="false">Hunt board</button></h2>
+      <div class="body">
+        <p class="hint" style="margin:0 0 8px">The foxes in play. Pin a frequency here, from the receiver, from a scan, or let autoseek do it; each one keeps its own last-heard time, max, cycle timing and ID. Saved with the session.</p>
+        <div class="row"><input type="number" id="boardFreq" placeholder="MHz" step="0.0125" style="width:100%"><button class="btn small" id="boardAddBtn">Pin</button></div>
+        <div class="markers-wrap" style="margin-top:8px"><table class="markers board" id="boardTable"><thead><tr><th>MHz</th><th>ID</th><th>Heard</th><th>Max</th><th>Next</th><th>Trend</th><th></th></tr></thead><tbody id="boardBody"></tbody></table><p class="hint" id="boardEmpty">Nothing pinned yet.</p></div>
+        <div class="tools" style="margin-top:6px"><button class="btn small" id="boardClearBtn">Clear board</button></div>
+      </div>
+    </section>
+
+    <section data-section="recording">
+      <h2><button type="button" aria-expanded="false">Recording</button></h2>
+      <div class="body">
+        <p class="hint" style="margin:0 0 8px">While recording, every reading and every scan is kept with a timestamp.</p>
+        <div class="stack"><button class="btn primary block" id="recBtn" aria-pressed="false">Start recording</button></div>
+        <dl class="kv">
+          <dt>Readings</dt><dd id="recReadings">0</dd>
+          <dt>Scans</dt><dd id="recScans">0</dd>
+        </dl>
+        <span class="label group">Save</span>
+        <div class="tools">
+          <button class="btn small" id="recReadingsBtn" disabled title="timestamp_iso,t_ms,frequency_mhz,rssi,lat,lon,accuracy_m">Readings CSV</button>
+          <button class="btn small" id="recScansBtn" disabled title="one row per channel per scan">Scans CSV</button>
+          <button class="btn small" id="recJsonBtn" disabled title="Everything, plus the settings and the fox's identity, as one JSON">Save session</button>
+          <button class="btn small" id="recClearBtn" disabled>Clear</button>
+        </div>
+        <span class="label group">Location</span>
+        <label class="row check"><input type="checkbox" id="geoChk"> <span>Stamp readings and scans with the device's location. <span class="hint">Off by default. A fix older than 15 s is not used. Lat, lon and accuracy go into their own columns; nothing leaves the page.</span></span></label>
+        <dl class="kv"><dt>Fix</dt><dd id="geoText">off</dd></dl>
+        <span class="label group">Replay</span>
+        <div class="tools" style="margin-bottom:6px"><button class="btn small" id="sessLoadBtn">Load session</button><span class="hint" id="sessName" style="align-self:center">A loaded session replays into the windows; the fox is left alone.</span></div>
+        <input type="range" id="clipSlider" min="0" max="0" value="0" style="width:100%" disabled>
+        <div class="tools">
+          <button class="btn small" id="clipPlayBtn" aria-pressed="false" disabled>Play</button>
+          <select id="clipSpeed" aria-label="Replay speed"><option value="1">1×</option><option value="2">2×</option><option value="5">5×</option><option value="10">10×</option><option value="30">30×</option></select>
+          <button class="btn small" id="clipExitBtn" disabled>Live</button>
+          <span class="hint" id="clipPos" style="align-self:center">live</span>
+        </div>
+      </div>
+    </section>
+
+    <section data-section="export">
+      <h2><button type="button" aria-expanded="false">Export</button></h2>
+      <div class="body">
+        <div class="tools">
+          <button class="btn small" id="pngRssiBtn" disabled>RSSI plot PNG</button>
+          <button class="btn small" id="pngScanBtn" disabled>Scan plot PNG</button>
+          <button class="btn small" id="scanCsvBtn" disabled title="frequency_mhz,rssi for the scan on screen">Scan CSV</button>
+        </div>
+      </div>
+    </section>
+
+    <section data-section="fox">
+      <h2><button type="button" aria-expanded="false">Fox configuration</button></h2>
+      <div class="body">
+        <p class="hint" style="margin:0 0 8px">Settings kept on the board, in the ESP32's NVM. They survive reboots and re-saving <code>code.py</code>.</p>
+        <dl class="kv">
+          <dt>Firmware</dt><dd id="fwVersion">—</dd>
+          <dt>Module</dt><dd id="fwModule">—</dd>
+          <dt>SA868 says</dt><dd id="fwModuleVersion">—</dd>
+          <dt>RSSI command</dt><dd id="fwRssiCmd">—</dd>
+          <dt>NVM</dt><dd id="fwNvm">—</dd>
+        </dl>
+        <div class="field" style="margin-top:10px"><label for="callsign">Callsign</label>
+          <div class="row"><input type="text" id="callsign" placeholder="N0CALL" maxlength="16" style="text-transform:uppercase" disabled><button class="btn small" id="callsignBtn" disabled>Save</button></div>
+          <p class="hint">Not used by this receive-only build. The transmit-capable firmware will refuse to key while this is <code>N0CALL</code>, so it is set here, once, ahead of time.</p></div>
+        <p class="hint" id="foxStatus"></p>
+      </div>
+    </section>
+
+    <section data-section="settings">
+      <h2><button type="button" aria-expanded="false">Settings</button></h2>
+      <div class="body">
+        <form id="settingsForm">
+          <div class="field"><span class="label">Theme</span>
+            <div class="radios row" style="gap:16px"><label><input type="radio" name="theme" value="dark"> <span>Dark</span></label><label><input type="radio" name="theme" value="light"> <span>Light</span></label></div></div>
+          <div class="field"><span class="label">Trace colours</span>
+            <div class="radios stack"><label><input type="radio" name="traces" value="instrument"> <span>Instrument (yellow, magenta max)</span></label><label><input type="radio" name="traces" value="blueamber"> <span>Blue / amber / green</span></label></div></div>
+          <div class="field"><label for="paletteSel">Waterfall palette</label><select id="paletteSel" name="palette" style="width:100%"></select><span class="palette-swatch"></span></div>
+          <label class="row check"><input type="checkbox" name="heatStrip"> <span>Heat strip under the signal-strength plot (the same readings as colour)</span></label>
+          <div class="field"><label for="windowS">RSSI history on screen</label>
+            <select id="windowS" name="windowS" style="width:100%"><option value="30">30 s</option><option value="60">60 s</option><option value="120">2 min</option><option value="300">5 min</option><option value="600">10 min</option></select></div>
+          <div class="two-col">
+            <div class="field"><label for="rssiLo">RSSI axis floor</label><input type="number" id="rssiLo" name="rssiLo" min="0" max="255" step="5" style="width:100%"></div>
+            <div class="field"><label for="rssiHi">RSSI axis top</label><input type="number" id="rssiHi" name="rssiHi" min="0" max="255" step="5" style="width:100%"></div>
+          </div>
+          <span class="label group">Tuning</span>
+          <label class="row check"><input type="checkbox" name="hamOnly"> <span>Keep the frequency box inside the amateur allocations (144–148, 420–450 MHz). Off: the module's full 134–174 / 400–480 MHz.</span></label>
+          <span class="label group">Debugging</span>
+          <label class="row check"><input type="checkbox" name="rawBytes"> <span>Echo raw received chunks in the console</span></label>
+        </form>
+      </div>
+    </section>
+  </aside>
+  <div class="sidebar-handle" id="sidebarHandle" title="Drag to resize the sidebar"></div>
+
+  <!-- ================================================================ main -->
+  <main class="main">
+    <section class="hunt" id="huntPanel" hidden aria-label="Hunt">
+      <div class="hunt-top">
+        <div class="hunt-tile"><div class="lbl">RSSI</div><div class="huge" id="hRssi">—</div><div class="sub" id="hFreq">not connected</div></div>
+        <div class="hunt-tile"><div class="lbl">Next burst</div><div class="huge" id="hCountdown">—</div><div class="sub" id="hCycle">listen on a channel to learn the fox's cycle</div></div>
+      </div>
+      <div class="hunt-actions">
+        <button class="btn primary" id="hLiveBtn" disabled>Start receiver</button>
+        <button class="btn" id="hSeekBtn" disabled aria-pressed="false">Seek</button>
+        <button class="btn" id="hSkipBtn" disabled>Skip</button>
+        <button class="btn" id="hLockBtn" disabled aria-pressed="false">Lock</button>
+        <button class="btn" id="hPinBtn" disabled>Pin</button>
+        <select id="hAtten" aria-label="Attenuator in line" title="Attenuator in line (bookkeeping)"><option value="0">no atten</option><option value="3">3 dB</option><option value="6">6 dB</option><option value="10">10 dB</option><option value="20">20 dB</option><option value="30">30 dB</option><option value="40">40 dB</option></select>
+      </div>
+      <p class="hint" id="hStatus">Connect a fox (or the simulated one), then Start receiver or Seek.</p>
+      <div class="chart-wrap"><canvas id="huntCanvas"></canvas></div>
+      <div class="hunt-board">
+        <div class="row" style="justify-content:space-between"><h2>Hunt board</h2><button class="btn small" id="hAudioBtn" aria-pressed="false">Audio off</button></div>
+        <div class="markers-wrap"><table class="markers board"><thead><tr><th>MHz</th><th>ID</th><th>Heard</th><th>Max</th><th>Next</th><th>Trend</th><th></th></tr></thead><tbody id="hBoardBody"></tbody></table><p class="hint" id="hBoardEmpty">Nothing pinned yet. Pin the tuned channel, or Seek.</p></div>
+        <div class="cw-decoded small" id="hCwText"></div>
+      </div>
+    </section>
+    <div class="plot-area">
+      <div class="windows">
+        <div class="window">
+          <div class="window-head"><h2>Signal strength</h2><span class="hint" id="rssiHead">RSSI vs time</span></div>
+          <div class="chart-wrap"><canvas id="rssiCanvas"></canvas></div>
+        </div>
+        <div class="window">
+          <div class="window-head"><h2>Channels</h2>
+            <div class="views" role="tablist" aria-label="Channels view">
+              <button class="btn small" data-scan-view="bars" aria-pressed="true">Bars</button>
+              <button class="btn small" data-scan-view="waterfall" aria-pressed="false" title="One row per scan; scan continuously to build it">Waterfall</button>
+            </div>
+            <span class="hint" id="scanHead">RSSI per channel</span></div>
+          <div class="chart-wrap"><canvas id="scanCanvas"></canvas><div class="tip" id="scanTip"></div></div>
+        </div>
+        <div class="window wide">
+          <div class="window-head"><h2>Audio</h2>
+            <div class="views" role="tablist" aria-label="Audio view">
+              <button class="btn small" data-audio-view="spectrum" aria-pressed="true">Passband</button>
+              <button class="btn small" data-audio-view="cw" aria-pressed="false">CW text</button>
+              <button class="btn small" data-audio-view="sstv" aria-pressed="false">SSTV picture</button>
+            </div>
+            <span class="hint" id="audioHead">from the sound card</span></div>
+          <div class="chart-wrap" id="audioWrap" data-view="spectrum">
+            <canvas id="audioCanvas"></canvas>
+            <div class="cw-text" id="cwText" hidden><div class="cw-elements" id="cwElements"></div><div class="cw-decoded" id="cwDecoded"></div></div>
+            <div class="sstv-view" id="sstvView" hidden><canvas id="sstvCanvas" width="320" height="256"></canvas><div class="hint" id="sstvCaption">No picture yet.</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <section class="console" id="console" aria-label="Fox console">
+      <div class="handle" id="conHandle" title="Drag to resize"></div>
+      <div class="bar">
+        <h2>Fox console</h2>
+        <label>Log <select id="conDlMode"><option value="full">commands + replies</option><option value="cmd">commands only</option></select></label>
+        <button class="btn small" id="conDl" type="button">Download</button>
+        <button class="btn small" id="conCopy" type="button">Copy</button>
+        <button class="btn small" id="conClear" type="button">Clear</button>
+      </div>
+      <div class="log" id="log" aria-live="polite"></div>
+      <form class="log-send" id="sendForm">
+        <input id="sendInput" type="text" placeholder="Type a command, e.g. help, or at AT+RSSI?  (↑ ↓ for history)" autocomplete="off" disabled>
+        <button class="btn" type="submit" disabled>Send</button>
+      </form>
+    </section>
+  </main>
+</div>
+
+<footer>
+  fox-hunt-web <span id="appVersion"></span> · Last updated <time id="updated" datetime="2026-10-20">2026-10-20</time> · Works in Chrome and Edge via Web Serial; audio decoding works in any browser. Page <a href="https://github.com/LC-Linkous/fox-hunt-web/blob/main/LICENSE">GPL-2.0</a>, firmware GPL-3.0.
+  Maintained by <a href="https://github.com/LC-Linkous">LC Linkous</a>. For the <a href="https://github.com/HamRadioVillage/dc34fox">Ham Radio Village DC34 fox</a>; not affiliated with the Village, NiceRF, or Seeed. No license is needed to listen; one is needed to transmit, and the firmware ships with transmit disabled.
+  <span class="fw"><b>Firmware:</b> the fox needs <a id="fwLink" href="firmware/code.py" download="code.py">code.py</a> (firmware <span id="fwNeed">0.3.1</span>) saved to it once with Thonny — <a href="https://github.com/LC-Linkous/fox-hunt-web#firmware">how</a>. Also on the <a href="https://github.com/LC-Linkous/fox-hunt-web/releases/latest">latest release</a>.</span>
+</footer>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

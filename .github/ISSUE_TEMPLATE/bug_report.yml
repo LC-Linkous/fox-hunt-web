@@ -1,0 +1,65 @@
+name: Bug report
+description: Something on the page or in the firmware isn't behaving as documented
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where is the problem?
+      options:
+        - Connecting / port chooser / detection
+        - Module band (dropdown, NVM)
+        - Receiver (tune, RSSI, readings)
+        - Scan
+        - Recording / export
+        - Console
+        - Firmware (code.py) on the fox
+        - Simulated fox
+        - Docs
+        - Deploy (GitHub Actions)
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: dropdown
+    id: hardware
+    attributes:
+      label: Fox connected?
+      options:
+        - "Yes — SA868 dual-band"
+        - "Yes — SA868 VHF"
+        - "Yes — SA868 UHF"
+        - "Yes — band not set / don't know"
+        - "No — simulated fox"
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Firmware and module version
+      description: The `version` line and the `module_version` line from `info` (both in the Fox configuration section).
+      placeholder: "foxhunt 0.2.0 xiao-esp32c3 sa868-dual · +VERSION:SA868S-..."
+  - type: textarea
+    id: console
+    attributes:
+      label: Console log
+      description: Fox console → Log → commands + replies → Download, and attach or paste it here. This is the diagnostic.
+      render: text
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and OS
+      placeholder: "Chrome 130 on macOS 15"
+    validations:
+      required: true

@@ -1,0 +1,73 @@
+/* fox.css — the two fixed windows and the fox-specific bits. This repo only. */
+/* SPDX-License-Identifier: GPL-2.0-only */
+
+.windows { display: grid; grid-template-columns: 3fr 2fr; gap: 8px; }
+@media (max-width: 1100px) { .windows { grid-template-columns: 1fr; } }
+.window { min-width: 0; }
+.window-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: .9rem; color: var(--ink-2); }
+.window-head h2 { margin: 0; font-size: .9rem; font-weight: 700; color: var(--ink); }
+.window-head .hint { margin: 0 0 0 auto; }
+.window .chart-wrap canvas { width: 100%; height: clamp(260px, 44vh, 520px); display: block; touch-action: none; }
+#scanCanvas { cursor: pointer; }
+#rssiCanvas { cursor: default; }
+
+/* frequency presets as pills */
+.pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.pills .btn { padding: 3px 10px; font-size: .85rem; font-family: var(--mono); }
+
+/* the module dropdown gets a warning ring while the band is unset */
+select.needs-attention { border-color: var(--warn); box-shadow: 0 0 0 2px color-mix(in srgb, var(--warn) 45%, transparent); }
+
+/* live readout in the Receiver section */
+.readout { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0 4px; }
+.readout .tile { background: var(--screen); border: 1px solid var(--edge); border-radius: var(--radius); padding: 8px 10px; }
+.readout .lbl { font-size: .78rem; color: var(--ink-3); }
+.readout .big { font-family: var(--mono); font-size: 1.6rem; font-variant-numeric: tabular-nums; color: var(--trace); line-height: 1.1; }
+.readout .big.dim { color: var(--ink-3); }
+
+/* footer firmware line */
+footer .fw { display: block; margin-top: 4px; }
+
+/* the Audio window spans both columns; its three views share one chart-wrap */
+.window.wide { grid-column: 1 / -1; }
+.window.wide .chart-wrap canvas#audioCanvas { height: clamp(220px, 32vh, 360px); }
+.chart-wrap[data-view="cw"] canvas#audioCanvas, .chart-wrap[data-view="sstv"] canvas#audioCanvas { display: none; }
+.cw-text { padding: 14px 18px; min-height: 220px; font-family: var(--mono); }
+.cw-elements { color: var(--ink-3); font-size: .9rem; letter-spacing: .15em; white-space: nowrap; overflow: hidden; text-overflow: clip; direction: rtl; text-align: left; height: 1.4em; }
+.cw-decoded { color: var(--trace); font-size: 1.6rem; line-height: 1.5; white-space: pre-wrap; word-break: break-word; min-height: 3em; }
+.sstv-view { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px; }
+.sstv-view canvas { width: min(100%, 640px); image-rendering: pixelated; border: 1px solid var(--edge); background: #000; }
+.badge.tx { border-color: var(--err); color: var(--err); font-weight: 700; animation: pulse .8s ease-in-out infinite; }
+#keyBtn[aria-pressed="true"] { background: var(--err); border-color: var(--err); color: #fff; font-weight: 700; }
+
+/* v0.4: replay state, location badge */
+.badge.warn { animation: none; }
+.kv dd.err { color: var(--err); }
+body.replaying .window-head h2::after { content: ' · replay'; color: var(--warn); font-weight: 400; }
+
+/* v0.5: hunt layout */
+body.hunt .sidebar, body.hunt .sidebar-handle, body.hunt .plot-area, body.hunt .console { display: none !important; }
+body.hunt .app { grid-template-columns: 1fr; }
+.hunt { max-width: 760px; width: 100%; margin: 0 auto; padding: 10px 12px 24px; display: flex; flex-direction: column; gap: 10px; }
+.hunt-top { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.hunt-tile { background: var(--screen); border: 1px solid var(--edge); border-radius: var(--radius); padding: 10px 14px; min-height: 110px; }
+.hunt-tile .lbl { font-size: .8rem; color: var(--ink-3); }
+.hunt-tile .huge { font-family: var(--mono); font-size: clamp(2.6rem, 11vw, 4.2rem); line-height: 1.05; font-variant-numeric: tabular-nums; color: var(--trace); }
+.hunt-tile .huge.dim { color: var(--ink-3); }
+.hunt-tile .huge.soon { color: var(--warn); }
+.hunt-tile .huge.now { color: var(--maxhold); }
+.hunt-tile .sub { font-size: .85rem; color: var(--ink-2); margin-top: 4px; min-height: 1.2em; }
+.hunt-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.hunt-actions .btn { padding: 10px 14px; font-size: 1rem; }
+.hunt-actions select { padding: 8px; }
+.hunt .chart-wrap canvas { width: 100%; height: clamp(180px, 28vh, 300px); display: block; }
+.hunt-board h2 { font-size: .95rem; margin: 0; }
+.hunt-board .cw-decoded.small { font-size: 1.1rem; min-height: 1.4em; color: var(--ink-2); margin-top: 6px; }
+table.board td:first-child { font-family: var(--mono); }
+table.board canvas.spark { width: 72px; height: 18px; display: block; }
+table.board td.id { color: var(--maxhold); font-weight: 700; font-family: var(--mono); }
+table.board tr.on td { background: color-mix(in srgb, var(--maxhold) 12%, transparent); }
+.mode-tabs { border: 1px solid var(--edge); border-radius: var(--radius); padding: 2px; gap: 2px; }
+.mode-tabs .btn { border: none; }
+.mode-tabs .btn[aria-pressed="true"] { background: var(--accent); color: #fff; }
+@media (max-width: 520px) { .topbar nav { display: none; } .hunt-top { grid-template-columns: 1fr; } .hunt-tile { min-height: 0; } }

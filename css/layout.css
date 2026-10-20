@@ -1,0 +1,64 @@
+/* layout.css — page grid: top bar, docked sidebar, plot, console drawer. */
+/* SPDX-License-Identifier: GPL-2.0-only */
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--paper); color: var(--ink); font-family: var(--font); font-size: 15px; line-height: 1.45; display: flex; flex-direction: column; min-height: 100vh; }
+html, body { height: auto; }
+a { color: var(--accent); }
+
+.topbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 10px 16px; border-bottom: 1px solid var(--edge); background: var(--panel); }
+.topbar h1 { font-size: 1.1rem; margin: 0 10px 0 0; font-weight: 700; letter-spacing: -.01em; }
+.topbar .spacer { flex: 1; }
+.topbar nav a { margin-left: 14px; font-size: .9rem; color: var(--ink-2); }
+.notice { margin: 0; padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--edge); color: var(--ink-2); font-size: .9rem; }
+
+:root { --sidebar-w: 300px; }
+.app { display: grid; grid-template-columns: var(--sidebar-w) 6px 1fr; flex: 1 0 auto; align-items: start; }
+.sidebar-handle { cursor: col-resize; align-self: stretch; background: var(--edge); opacity: .6; }
+.sidebar-handle:hover, .sidebar-handle.active { background: var(--accent); opacity: 1; }
+@media (max-width: 900px) { .app { grid-template-columns: 1fr; } .sidebar-handle { display: none; } }
+
+/* ---- sidebar: docked accordion ---- */
+.sidebar { background: var(--panel); border-right: none; position: sticky; top: 0; max-height: 100vh; overflow-y: auto; align-self: stretch; }
+@media (max-width: 900px) { .sidebar { position: static; max-height: none; border-right: none; border-bottom: 1px solid var(--edge); } }
+.sidebar section { border-bottom: 1px solid var(--edge); }
+.sidebar h2 { margin: 0; font-size: .95rem; }
+.sidebar h2 button { width: 100%; text-align: left; background: none; border: none; padding: 11px 16px; color: var(--ink); font: inherit; font-weight: 700; display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
+.sidebar h2 button::after { content: '+'; color: var(--ink-3); font-weight: 400; }
+.sidebar section.open h2 button::after { content: '−'; }
+.sidebar h2 button:hover { background: color-mix(in srgb, var(--ink) 5%, transparent); }
+.sidebar .body { display: none; padding: 4px 16px 16px; }
+.sidebar section.open .body { display: block; }
+
+/* ---- main column ---- */
+.main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.plot-area { padding: 10px 16px 6px; }
+.chart-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: .85rem; color: var(--ink-2); margin: 6px 0 4px; min-height: 1.2em; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { display: inline-block; width: 18px; height: 3px; border-radius: 2px; }
+.legend i[style*="gradient"] { width: 64px; height: 8px; }
+.chart-wrap { position: relative; background: var(--screen); border: 1px solid var(--edge); border-radius: var(--radius); }
+canvas#plot { width: 100%; height: clamp(320px, 52vh, 620px); display: block; touch-action: none; cursor: crosshair; }
+.tip { position: absolute; pointer-events: none; display: none; background: var(--ink); color: var(--paper); font-size: .82rem; padding: 5px 8px; border-radius: 4px; white-space: nowrap; font-family: var(--mono); font-variant-numeric: tabular-nums; transform: translate(12px, -50%); z-index: 2; }
+
+/* ---- console drawer ---- */
+.console { border-top: 1px solid var(--edge); background: var(--panel); display: flex; flex-direction: column; }
+.console .bar { display: flex; align-items: center; gap: 8px; padding: 6px 16px; }
+.console .bar h2 { font-size: .9rem; margin: 0; font-weight: 700; flex: 1; }
+.console .handle { height: 8px; cursor: ns-resize; background: linear-gradient(var(--edge), var(--edge)) center / 48px 2px no-repeat; }
+.console .handle:hover { background-color: color-mix(in srgb, var(--ink) 5%, transparent); }
+.log { font-family: var(--mono); font-size: .86rem; line-height: 1.5; background: var(--screen); margin: 0 16px; padding: 10px 12px; height: 300px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; color: var(--ink-2); border: 1px solid var(--edge); border-radius: var(--radius); }
+.log .tx { color: var(--accent); }
+.log .err { color: var(--err); }
+.log .dim { color: var(--ink-3); }
+.log .reply { color: var(--ink); }
+.log .toggle { display: block; background: none; border: none; color: var(--accent); font: inherit; padding: 2px 0; cursor: pointer; }
+.log-send { display: flex; gap: 8px; padding: 8px 16px 12px; }
+.log-send input { flex: 1; }
+
+footer { padding: 10px 16px; border-top: 1px solid var(--edge); color: var(--ink-3); font-size: .85rem; }
+footer a { color: var(--ink-2); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

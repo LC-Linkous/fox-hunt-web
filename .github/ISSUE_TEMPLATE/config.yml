@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Open the tool
+    url: https://lc-linkous.github.io/fox-hunt-web/
+    about: The live page. Try the simulated fox first to see whether the problem needs hardware to reproduce.
+  - name: Serial protocol between the page and the firmware
+    url: https://github.com/LC-Linkous/fox-hunt-web/blob/main/PROTOCOL.md
+    about: Commands, framing, reply conventions, and what the firmware sends to the SA868.
+  - name: The fox hardware (HamRadioVillage/dc34fox)
+    url: https://github.com/HamRadioVillage/dc34fox
+    about: Board, pinout, flashing CircuitPython, and the beacon firmware this one replaces.
+  - name: Web Serial browser support
+    url: https://caniuse.com/web-serial
+    about: Connect only works in Chrome and Edge.

@@ -1,0 +1,89 @@
+/* components.css — buttons, inputs, tables, status. */
+/* SPDX-License-Identifier: GPL-2.0-only */
+
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: .45; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.btn { border: 1px solid var(--edge); background: var(--panel); color: var(--ink); border-radius: var(--radius); padding: 7px 14px; line-height: 1.2; }
+.btn:hover:not(:disabled) { border-color: var(--ink-3); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
+.btn.primary:hover:not(:disabled) { background: var(--accent-2); border-color: var(--accent-2); }
+.btn.small { padding: 4px 10px; font-size: .88rem; }
+.btn[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 18%, var(--panel)); border-color: var(--accent); font-weight: 700; }
+.btn.block { width: 100%; }
+
+input[type=number], input[type=text], select { padding: 6px 8px; border: 1px solid var(--edge); border-radius: var(--radius); background: var(--field); font-family: var(--mono); font-variant-numeric: tabular-nums; min-width: 0; }
+select { font-family: var(--font); }
+
+.field { margin: 10px 0; }
+.field label, .field .label { display: block; font-size: .85rem; color: var(--ink-2); margin-bottom: 4px; }
+.field label.row { display: flex; color: var(--ink); font-size: .92rem; }
+.label.group { display: block; margin: 16px 0 6px; color: var(--ink); font-size: .9rem; font-weight: 600; }
+.row { display: flex; gap: 8px; align-items: center; }
+.row input { width: 100%; }
+/* checkbox rows: box hugs the left, text flows beside it, inline number stays compact */
+.row.check { align-items: flex-start; gap: 10px; cursor: pointer; color: var(--ink); font-size: .92rem; }
+.row.check input[type=checkbox] { width: auto; flex: 0 0 auto; margin: 3px 0 0; accent-color: var(--accent); }
+.row.check > span { flex: 1 1 auto; line-height: 1.35; }
+.row.check > input[type=number] { flex: 0 0 auto; width: 64px; padding: 3px 6px; }
+.row .suffix { color: var(--ink-2); font-size: .85rem; white-space: nowrap; }
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.stack { display: flex; flex-direction: column; gap: 6px; }
+.radios label { display: flex; align-items: center; gap: 8px; font-size: .92rem; margin: 0; color: var(--ink); cursor: pointer; }
+.radios input[type=radio] { width: auto; flex: 0 0 auto; margin: 0; accent-color: var(--accent); }
+.radios.row label { white-space: nowrap; }
+.radios input[type=number] { width: 78px; padding: 3px 6px; }
+.hint { font-size: .82rem; color: var(--ink-3); margin: 4px 0 0; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; font-size: .86rem; margin: 10px 0 0; }
+.kv dt { color: var(--ink-2); }
+.kv dd { margin: 0; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.tools { display: flex; flex-wrap: wrap; gap: 6px; }
+.views { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.status { display: inline-flex; align-items: center; gap: 8px; color: var(--ink-2); font-size: .9rem; }
+.status .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ink-3); }
+.status.ok .dot { background: var(--ok); } .status.demo .dot { background: var(--warn); } .status.err .dot { background: var(--err); }
+
+table.markers { width: 100%; border-collapse: collapse; font-size: .84rem; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+table.markers th, table.markers td { text-align: right; padding: 3px 4px; border-bottom: 1px solid var(--edge); white-space: nowrap; }
+table.markers th { color: var(--ink-2); font-weight: 500; font-family: var(--font); }
+table.markers td:first-child, table.markers th:first-child { text-align: left; }
+table.markers button { border: none; background: none; color: var(--ink-3); padding: 0 4px; }
+.markers-wrap { overflow-x: auto; }
+
+.diag-out { font-family: var(--mono); font-size: .78rem; line-height: 1.4; background: var(--screen); border: 1px solid var(--edge); border-radius: var(--radius); padding: 8px 10px; max-height: 300px; overflow: auto; white-space: pre-wrap; word-break: break-word; color: var(--ink-2); margin-top: 10px; }
+.palette-swatch { display: block; height: 10px; border-radius: 3px; margin-top: 6px; border: 1px solid var(--edge); }
+code { font-family: var(--mono); font-size: .9em; background: var(--screen); border: 1px solid var(--edge); padding: 0 4px; border-radius: 3px; }
+
+/* running state for Single / Continuous / CW */
+.btn.running { background: var(--warn); border-color: var(--warn); color: #1a1a1a; font-weight: 700; }
+.btn.running::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #1a1a1a; margin-right: 8px; animation: pulse 1s ease-in-out infinite; vertical-align: 1px; }
+@keyframes pulse { 50% { opacity: .25; } }
+.btn.busy { color: var(--ink-2); }
+/* demo mode active */
+.btn.demo-active { border-color: var(--warn); box-shadow: 0 0 0 2px color-mix(in srgb, var(--warn) 45%, transparent); font-weight: 700; }
+/* badges */
+.badge { display: inline-block; font-size: .8rem; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--edge); color: var(--ink-2); background: var(--screen); }
+.badge.ok { border-color: var(--ok); color: var(--ok); } .badge.warn { border-color: var(--warn); color: var(--warn); }
+.cal-steps { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.cal-steps .btn.done::after { content: ' ✓'; color: var(--ok); }
+/* CW meter */
+.cw-panel { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; padding: 24px 18px; background: var(--screen); border: 1px solid var(--edge); border-radius: var(--radius); }
+.cw-panel .big { font-family: var(--mono); font-size: 2.4rem; font-variant-numeric: tabular-nums; line-height: 1.1; color: var(--s11); white-space: nowrap; }
+.cw-panel .big.z { font-size: 1.7rem; }
+.cw-panel .big.s21 { color: var(--s21); }
+.cw-panel .lbl { font-size: .85rem; color: var(--ink-2); }
+.cw-panel .unit { font-family: var(--mono); font-size: 1rem; color: var(--ink-2); margin-left: 4px; }
+/* markers panel under the plot */
+.markers-panel { padding: 8px 16px 10px; border-top: 1px solid var(--edge); }
+.markers-panel .head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }
+.markers-panel .head h2 { font-size: .9rem; margin: 0 8px 0 0; }
+.console .bar label { display: inline-flex; align-items: center; gap: 6px; font-size: .85rem; color: var(--ink-2); }
+.console .bar select { padding: 3px 6px; font-size: .85rem; }
+.hint.err { color: var(--err); }
+.badge.rec { border-color: var(--err); color: var(--err); animation: pulse 1.2s ease-in-out infinite; }
+
+/* the zero-span meter reuses the cw-panel layout; its readouts use the trace colour */
+.meter-panel .big { color: var(--trace); }

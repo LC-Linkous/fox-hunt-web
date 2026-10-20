@@ -1,0 +1,54 @@
+/* theme.css — colour tokens and fonts. Dark bench-instrument is the default. */
+/* SPDX-License-Identifier: GPL-2.0-only */
+
+:root {
+  --font: 'Atkinson Hyperlegible', system-ui, sans-serif;
+  --mono: 'Spline Sans Mono', ui-monospace, Menlo, Consolas, monospace;
+  --radius: 4px;
+}
+
+/* ---- dark (default) ---- */
+:root, :root[data-theme="dark"] {
+  --paper:   #0f1318;   /* page background */
+  --panel:   #161b22;   /* sidebar, console */
+  --screen:  #0b0e12;   /* plot surface — the "CRT" */
+  --edge:    #2a323d;   /* panel borders */
+  --grid:    #232b36;   /* plot grid */
+  --axis:    #4a5564;
+  --ink:     #e8ecf1;
+  --ink-2:   #a9b3bf;
+  --ink-3:   #6c7784;
+  --accent:  #5c8df0;   /* primary buttons, focus */
+  --accent-2:#4573d4;
+  --field:   #0f1318;
+  --held:    #6c7784;
+  --overlay: #b58cf5;   /* loaded CSV comparison */
+  --marker:  #ffffff;
+  --ok: #43b05c; --warn: #e0a634; --err: #e45a50;
+}
+/* ---- light ---- */
+:root[data-theme="light"] {
+  --paper:   #f4f6f8;
+  --panel:   #ffffff;
+  --screen:  #fbfcfd;
+  --edge:    #d3d9e0;
+  --grid:    #e6eaef;
+  --axis:    #8d97a3;
+  --ink:     #1a2028;
+  --ink-2:   #4d5866;
+  --ink-3:   #8a94a1;
+  --accent:  #2f5fc4;
+  --accent-2:#244ea8;
+  --field:   #ffffff;
+  --held:    #8a94a1;
+  --overlay: #7c3fd6;
+  --marker:  #1a2028;
+  --ok: #2f8a3f; --warn: #b8700a; --err: #c2342a;
+}
+
+/* ---- trace colour schemes (data only; nothing else may use these) ---- */
+/* live trace, page-side max hold, min hold, average */
+:root, :root[data-traces="instrument"]                    { --trace: #f2cf3a; --maxhold: #e06ad0; --minhold: #45cfe0; --avg: #ffffff; }   /* classic SA yellow, magenta, cyan */
+:root[data-theme="light"][data-traces="instrument"]       { --trace: #9c7205; --maxhold: #a4249a; --minhold: #0b8fa3; --avg: #1a2028; }
+:root[data-traces="blueamber"]                            { --trace: #5a86e0; --maxhold: #e0a634; --minhold: #43b05c; --avg: #ffffff; }
+:root[data-theme="light"][data-traces="blueamber"]        { --trace: #2f5fc4; --maxhold: #b8700a; --minhold: #2f8a3f; --avg: #1a2028; }

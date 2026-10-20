@@ -1,0 +1,36 @@
+name: Feature request
+description: Suggest a view, a readout, an export, or a firmware command
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / use case
+      description: What were you trying to do on a hunt (or at the bench) that the page doesn't support?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Receiver controls
+        - Signal strength view
+        - Scan
+        - Recording / export
+        - Firmware command (PROTOCOL.md)
+        - Audio (AF_OUT path)
+        - Transmit (the TX-capable build)
+        - Docs
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Workarounds
+      description: What you do today instead — a handheld, the tinySA, a terminal and `at` commands, etc.
