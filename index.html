@@ -174,6 +174,23 @@
       </div>
     </section>
 
+    <section data-section="bearing">
+      <h2><button type="button" aria-expanded="false">Bearing</button></h2>
+      <div class="body">
+        <p class="hint" style="margin:0 0 8px">With a directional antenna: start the receiver, hold <em>Capture</em>, turn through a full circle, release. RSSI against heading is plotted and the lobe's centre is the bearing. Two captures from two places, both with location on, give a fix.</p>
+        <div class="field"><span class="label">Heading source</span>
+          <div class="tools"><button class="btn small" id="compassBtn" aria-pressed="false">Use the compass</button><button class="btn small" id="northBtn" title="I'm pointing north now: calibrates a relative sensor, trims an absolute one">Mark north</button></div>
+          <dl class="kv"><dt>Compass</dt><dd id="compassText">off</dd><dt>Heading</dt><dd id="headingText">—</dd></dl>
+          <label for="headingSlider" class="label" style="margin-top:6px">Manual heading (no compass, or on a laptop)</label>
+          <input type="range" id="headingSlider" min="0" max="359" value="0" style="width:100%"><p class="hint">Used whenever the compass has no heading. Turn the antenna and drag to match; on a bench, drag to "turn" the simulated yagi.</p></div>
+        <div class="stack"><button class="btn primary block" id="captureBtn" disabled aria-pressed="false">Hold to capture</button></div>
+        <p class="hint" id="captureStatus"></p>
+        <div class="markers-wrap" style="margin-top:8px"><table class="markers bearings" id="bearingTable"><thead><tr><th>When</th><th>MHz</th><th>Bearing</th><th>Width</th><th>Where</th><th></th></tr></thead><tbody id="bearingBody"></tbody></table><p class="hint" id="bearingEmpty">No captures yet.</p></div>
+        <dl class="kv"><dt>Fix</dt><dd id="fixText">needs two captures with location from different places</dd></dl>
+        <div class="tools"><button class="btn small" id="fixCopyBtn" disabled>Copy fix</button><button class="btn small" id="bearingClearBtn">Clear captures</button></div>
+      </div>
+    </section>
+
     <section data-section="board">
       <h2><button type="button" aria-expanded="false">Hunt board</button></h2>
       <div class="body">
@@ -287,6 +304,13 @@
       </div>
       <p class="hint" id="hStatus">Connect a fox (or the simulated one), then Start receiver or Seek.</p>
       <div class="chart-wrap"><canvas id="huntCanvas"></canvas></div>
+      <div class="hunt-bearing">
+        <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:6px"><h2>Bearing</h2><span class="hint" id="hHeading">heading —</span></div>
+        <div class="chart-wrap"><canvas id="hPolar"></canvas></div>
+        <div class="hunt-actions"><button class="btn primary" id="hCaptureBtn" disabled aria-pressed="false">Hold to capture</button><button class="btn" id="hCompassBtn" aria-pressed="false">Compass</button><button class="btn" id="hNorthBtn">Mark north</button></div>
+        <input type="range" id="hHeadingSlider" min="0" max="359" value="0" style="width:100%" title="Manual heading">
+        <p class="hint" id="hBearingText">Hold Capture, turn a full circle, release.</p>
+      </div>
       <div class="hunt-board">
         <div class="row" style="justify-content:space-between"><h2>Hunt board</h2><button class="btn small" id="hAudioBtn" aria-pressed="false">Audio off</button></div>
         <div class="markers-wrap"><table class="markers board"><thead><tr><th>MHz</th><th>ID</th><th>Heard</th><th>Max</th><th>Next</th><th>Trend</th><th></th></tr></thead><tbody id="hBoardBody"></tbody></table><p class="hint" id="hBoardEmpty">Nothing pinned yet. Pin the tuned channel, or Seek.</p></div>
@@ -304,6 +328,7 @@
             <div class="views" role="tablist" aria-label="Channels view">
               <button class="btn small" data-scan-view="bars" aria-pressed="true">Bars</button>
               <button class="btn small" data-scan-view="waterfall" aria-pressed="false" title="One row per scan; scan continuously to build it">Waterfall</button>
+              <button class="btn small" data-scan-view="bearing" aria-pressed="false" title="RSSI against heading from the Bearing section">Bearing</button>
             </div>
             <span class="hint" id="scanHead">RSSI per channel</span></div>
           <div class="chart-wrap"><canvas id="scanCanvas"></canvas><div class="tip" id="scanTip"></div></div>

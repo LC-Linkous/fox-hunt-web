@@ -79,7 +79,7 @@ ESP32 passes commands and answers between USB and the module's UART.
   firmware involved. The firmware's `volume` setting is that pad's level.
   See [Audio](#audio).
 
-## What it does (v0.5)
+## What it does (v0.6)
 
 - **Connect / detect** — reads `version` and `info`, refuses a port that is not
   a fox running this firmware, shows the module's own version string and
@@ -117,6 +117,19 @@ ESP32 passes commands and answers between USB and the module's UART.
   receiver, from a scan's strongest channel, by typing a frequency, or let
   autoseek do it. Saved with the session, including each fox's learned
   cycle.
+- **Bearing** — with a directional antenna: hold *Capture*, turn through a
+  full circle, release. RSSI against heading is binned and plotted on a
+  polar chart (the Channels window's Bearing tab, and the Hunt panel); the
+  lobe's centre is the bearing, with a width and a note when the circle
+  was partial or the lobe broad. Heading comes from the device compass
+  (Android Chrome and, after a tap, iOS) or from a manual heading slider on
+  anything without one; *Mark north* calibrates a relative sensor or trims
+  an absolute one. Every reading is tagged with the heading at its own
+  moment, not the moment the burst came back. Captures are listed with
+  their location; two captures with location from different places give a
+  fix (lat/lon, distance, crossing angle) with a Copy button. Saved with
+  the session. The simulated fox carries a bearing, so the slider "turns" a
+  simulated yagi on the bench.
 - **Attenuator bookkeeping** — a preset list (3–40 dB) or a custom value.
   The RSSI byte is logged as read; the attenuation goes in its own column
   and a change marks the plot and resets max hold. Default: none.
@@ -152,8 +165,8 @@ ESP32 passes commands and answers between USB and the module's UART.
 - **About** (`about.html`) — what works on which device, what the firmware
   can and can't do, what the page keeps and asks for.
 
-See `ROADMAP.md` for what comes next: the bearing helper, the bench pair,
-the SQ wire.
+See `ROADMAP.md` for what comes next: the bench pair, the SQ wire, SSTV
+transmit.
 
 ## Hardware
 
@@ -222,12 +235,13 @@ other receiver's speaker jack.
 | `js/device/demo-link.js` | the simulated fox: same byte stream, three signals, a simulated transmitter at 1/10 real time |
 | `js/plot/rssi.js`, `scan.js`, `waterfall.js`, `audio.js` | the plots; `palettes.js` is tinysa-web's |
 | `js/hunt.js` | cycle timing, autoseek decisions, the board, callsign matching — no DOM, no device |
+| `js/bearing.js`, `js/ui/compass.js`, `js/plot/polar.js` | bearing captures and the two-bearing fix; the heading source with manual fallback; the polar plot |
 | `js/ui/session.js`, `geo.js` | session save/parse and replay; location stamps |
 | `about.html` | platforms, what the firmware does, what the page keeps |
 | `ROADMAP.md` | the plan, with the decisions recorded |
 | `js/audio/capture.js`, `fft.js`, `cw.js`, `sstv.js` | sound-card capture, FFT/Goertzel, the Morse decoder, the SSTV decoder and encoder |
 | `js/ui/`, `css/` | sidebar, console, settings, recorder, export; styles |
-| `tests/device.test.mjs`, `audio.test.mjs`, `session.test.mjs`, `hunt.test.mjs` | the device layer over the simulated fox; the decoders against synthesized audio; session round trip and replay; the hunt logic against a synthetic fox (`node --test`) |
+| `tests/device.test.mjs`, `audio.test.mjs`, `session.test.mjs`, `hunt.test.mjs`, `bearing.test.mjs` | the device layer over the simulated fox; the decoders against synthesized audio; session round trip and replay; the hunt logic against a synthetic fox; bearing captures against a synthetic yagi sweep and a two-bearing fix (`node --test`) |
 | `.github/workflows/pages.yml` | publishes the page and the firmware to GitHub Pages |
 | `.github/workflows/tests.yml` | syntax-checks every module and runs the tests |
 

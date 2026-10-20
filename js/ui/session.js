@@ -18,7 +18,7 @@ export function parseSession(text) {
   if (!o || !['fox-hunt-web', 'fox-demo-web'].includes(o.tool) || !['session', 'recording'].includes(o.kind)) throw new Error('not a fox-hunt-web session');   // fox-demo-web: the project's name before v0.5
   const readings = (o.readings || []).map(r => ({ t: +r.t, f: r.f == null ? null : +r.f, rssi: +r.rssi, lat: r.lat, lon: r.lon, acc: r.acc }));
   const scans = (o.scans || []).map(s => ({ t: +s.t, start: +s.start, stop: +s.stop, stepKHz: +s.stepKHz, f: Float64Array.from(s.f), rssi: Int16Array.from(s.rssi), n: s.f.length, lat: s.lat, lon: s.lon, acc: s.acc }));
-  return { meta: { app: o.app, device: o.device, band: o.band, settings: o.settings, savedAt: o.savedAt, board: Array.isArray(o.board) ? o.board : [] }, readings, scans, startedAt: o.startedAt ? Date.parse(o.startedAt) : null };
+  return { meta: { app: o.app, device: o.device, band: o.band, settings: o.settings, savedAt: o.savedAt, board: Array.isArray(o.board) ? o.board : [], bearings: Array.isArray(o.bearings) ? o.bearings : [] }, readings, scans, startedAt: o.startedAt ? Date.parse(o.startedAt) : null };
 }
 /** Open a file chooser; resolves with the file's text, or null if cancelled. */
 export function pickFile(accept = '.json,application/json') {

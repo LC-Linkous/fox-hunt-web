@@ -28,10 +28,11 @@ export class DemoLink extends ShellLink {
     this.bw = 1; this.squelch = 3; this.volume = 5;
     this.t0 = Date.now();
     this.foxes = [
-      { f: 146.565, peak: 215, on: 12, period: 40, phase: 0 },      // keyed, like the DC34 fox
-      { f: 433.900, peak: 140, on: Infinity, period: 1, phase: 0 }, // a continuous one, weaker
-      { f: 146.520, peak: 90, on: 3, period: 17, phase: 5 },        // someone calling on the simplex channel
+      { f: 146.565, peak: 215, on: 12, period: 40, phase: 0, bearing: 60 },    // keyed, like the DC34 fox; it sits to the ENE
+      { f: 433.900, peak: 140, on: Infinity, period: 1, phase: 0, bearing: 300 }, // a continuous one, weaker, to the NW
+      { f: 146.520, peak: 90, on: 3, period: 17, phase: 5, bearing: 180 },     // someone calling on the simplex channel
     ];
+    this.heading = null;   // set by the page when a heading is known: the simulated antenna is a yagi pointing that way
   }
   async open() {}
   info() { return 'demo'; }
@@ -88,7 +89,10 @@ export class DemoLink extends ShellLink {
       const d = Math.abs(f - fx.f) * 1000, half = this.bw ? 12.5 : 6.25;
       const sel = d <= half ? 1 : Math.max(0, 1 - (d - half) / (half * 1.5));
       const fade = 1 - 0.15 * Math.max(0, Math.sin(t * 0.9 + fx.f));   // a little walking-around fade
-      v = Math.max(v, fx.peak * sel * fade);
+      // a 3-element yagi: front lobe ~60° wide, back lobe ~15 dB down; only when the page has a heading
+      let gain = 1;
+      if (this.heading != null) { const d = Math.abs((((this.heading - fx.bearing) % 360) + 540) % 360 - 180); gain = Math.max(Math.exp(-(d * d) / (2 * 30 * 30)), 0.18 * Math.exp(-((180 - d) ** 2) / (2 * 40 * 40)), 0.06); }
+      v = Math.max(v, fx.peak * sel * fade * gain);
     }
     v += (Math.random() - 0.5) * 5;
     return Math.max(0, Math.min(255, Math.round(v)));

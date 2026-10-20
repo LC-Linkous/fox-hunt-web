@@ -17,6 +17,7 @@ const DEFAULTS = {
   attenDb: 0,             // attenuator in line, dB; bookkeeping only (see the Receiver section)
   mode: 'bench',          // 'bench' | 'hunt' layout
   seekMargin: 20, seekDwell: 30, seekPin: true,
+  manualHeading: 0,       // the heading slider, for devices without a compass
 };
 
 export const settings = { ...DEFAULTS };

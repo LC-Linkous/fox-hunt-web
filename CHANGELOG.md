@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.6.0 — bearing
+
+- **Bearing capture**: hold, turn, release; 5° bins, lobe centre by
+  parabolic interpolation, width at half-way between floor and peak,
+  coverage and quality; partial-circle and broad-lobe notes.
+- **Heading source**: device compass (`deviceorientationabsolute` on
+  Android, `webkitCompassHeading` on iOS after permission) with a manual
+  slider fallback and *Mark north*; a heading history so each reading is
+  tagged with the heading at its own time; short RSSI bursts while
+  capturing.
+- **Polar plot** in the Channels window (Bearing tab) and the Hunt panel;
+  several captures overlaid, the active one solid, the needle for the
+  current heading.
+- **Fix** from the last two located captures (flat-earth intersection,
+  rejects near-parallel or diverging bearings), with Copy.
+- Captures saved in the session. The simulated fox carries a bearing and a
+  yagi pattern so the bench demo produces one.
+- Tests: 5 bearing tests (34 total).
+
 ## v0.5.0 — the hunt
 
 - **Hunt mode** (Bench / Hunt switch): one column, huge RSSI and countdown,

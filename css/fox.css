@@ -71,3 +71,9 @@ table.board tr.on td { background: color-mix(in srgb, var(--maxhold) 12%, transp
 .mode-tabs .btn { border: none; }
 .mode-tabs .btn[aria-pressed="true"] { background: var(--accent); color: #fff; }
 @media (max-width: 520px) { .topbar nav { display: none; } .hunt-top { grid-template-columns: 1fr; } .hunt-tile { min-height: 0; } }
+
+/* v0.6: bearing */
+.hunt-bearing h2 { font-size: .95rem; margin: 0; }
+.hunt-bearing .chart-wrap canvas { height: clamp(240px, 60vw, 360px); }
+table.bearings td:nth-child(3) { font-family: var(--mono); font-weight: 700; color: var(--maxhold); }
+#captureBtn[aria-pressed="true"], #hCaptureBtn[aria-pressed="true"] { background: var(--maxhold); border-color: var(--maxhold); color: #1a1a1a; }

@@ -13,6 +13,9 @@ import { buildLut } from './plot/palettes.js';
 import { sessionBlob, parseSession, pickFile, createReplay } from './ui/session.js';
 import { createGeo, hasGeolocation } from './ui/geo.js';
 import { createCycleTracker, createSeeker, createBoard, findCallsigns } from './hunt.js';
+import { createCapture as createBearingCapture, restoreCapture, fixFromBearings, distanceBetween } from './bearing.js';
+import { createCompass } from './ui/compass.js';
+import { renderPolar } from './plot/polar.js';
 import { createCapture, listInputs, hasAudioCapture } from './audio/capture.js';
 import { CwDecoder } from './audio/cw.js';
 import { SstvDecoder } from './audio/sstv.js';
@@ -23,7 +26,7 @@ import { initSidebar } from './ui/sidebar.js';
 import { download, stamp, canvasPng } from './ui/export.js';
 import { createRecorder } from './ui/recorder.js';
 
-const APP_VERSION = '0.5.0';
+const APP_VERSION = '0.6.0';
 const FW_NEEDED = '0.3.1';
 const BURST = 10;                 // readings per `rssi N` while the receiver runs (~1 s of data per round trip)
 const $ = id => document.getElementById(id);
@@ -37,6 +40,7 @@ const state = {
   audio: { view: 'spectrum', running: false, cw: null, sstv: null, picture: false },
   scanView: 'bars', rows: [], rowsF: null, wfHover: null, lut: null, replaying: false,
   seeking: false, seekDwelling: false, cycle: createCycleTracker(), lastId: null,
+  captures: [], capturing: null, lastFix: null,
 };
 const board = createBoard();
 const seeker = createSeeker();
@@ -121,6 +125,7 @@ function setEnabled(on) {
   ['tuneBtn', 'liveBtn', 'oneBtn', 'scanBtn', 'scanLoopBtn', 'maxResetBtn', 'pinBtn', 'seekBtn', 'hLiveBtn', 'hSeekBtn', 'hPinBtn'].forEach(id => $(id).disabled = !set);
   ['seekSkipBtn', 'seekLockBtn', 'hSkipBtn', 'hLockBtn'].forEach(id => $(id).disabled = !set || !state.seeking);
   $('pinPeakBtn').disabled = !set || !state.scan;
+  ['captureBtn', 'hCaptureBtn'].forEach(id => $(id).disabled = !set);
   ['bwSel', 'sqSel', 'volSel', 'callsign', 'callsignBtn'].forEach(id => $(id).disabled = !on);
   con.setEnabled(on);
   $('rxBadge').hidden = !on;
@@ -151,7 +156,7 @@ async function connect(demo) {
     state.fox = fox; state.demo = demo;
     // the dropdown wins when it names a band and the fox disagrees (or has none)
     if (sel !== 'auto' && sel !== fox.state.band) { con.dim(`setting the module band to ${sel} (kept on the board)`); await fox.band(sel); }
-    applyModel();
+    applyModel(); updateHeading();
     setStatus(`${demo ? 'Simulated' : 'Connected'} · ${fox.ident.label}`, demo ? 'demo' : 'ok');
     if (!fox.bandSet) setStatus(`${demo ? 'Simulated' : 'Connected'} · band not set — pick the module ↑`, 'err');
     chart.dirty = true;
@@ -207,6 +212,7 @@ $('volSel').addEventListener('change', async () => { try { await state.fox?.volu
 function takeSample(t, rssi, f) {
   state.samples.push({ t, rssi, f }); if (state.samples.length > 20000) state.samples.shift();
   if (f != null) { state.cycle.feed(t, rssi); board.note(f, t, rssi); }
+  if (state.capturing && rssi >= 0) { const h = compass.at(t); if (Number.isFinite(h)) { state.capturing.add(h, rssi); state.liveBearing = { h, r: rssi }; } }
   if (rssi > state.max) state.max = rssi;
   $('rssiNow').textContent = rssi >= 0 ? String(rssi) : 'no reply'; $('rssiNow').classList.toggle('dim', rssi < 0);
   $('rssiMax').textContent = state.max >= 0 ? String(state.max) : '—'; $('rssiMax').classList.remove('dim');
@@ -218,7 +224,7 @@ async function liveLoop() {
   while (state.live && state.fox) {
     if (state.scanning || state.keyed || state.foxRunning) { await new Promise(r => setTimeout(r, 100)); continue; }   // a scan has the receiver retuning; TX has it keyed
     try {
-      const burst = await state.fox.rssiBurst(BURST);
+      const burst = await state.fox.rssiBurst(state.capturing ? 3 : BURST);   // short bursts while a bearing is being captured: the antenna is moving
       for (let i = 0; i < burst.n; i++) takeSample(burst.t0 + burst.ms[i], burst.rssi[i], burst.f);
       recorder.addBurst(burst, stampFor());
       got += burst.n; const dt = (performance.now() - since) / 1000; if (dt > 2) { state.rate = got / dt; $('rateNow').textContent = state.rate.toFixed(1) + ' / s'; got = 0; since = performance.now(); }
@@ -394,6 +400,65 @@ function updateHunt() {
 }
 setInterval(() => { updateHunt(); if (board.list().length) renderBoard(); }, 500);
 
+
+// ---------------------------------------------------------------- bearing
+const compass = createCompass({ onChange: () => { $('compassText').textContent = compass.text(); $('compassText').classList.toggle('err', !!compass.error); for (const id of ['compassBtn', 'hCompassBtn']) $(id).setAttribute('aria-pressed', String(compass.on && compass.source !== 'none')); updateHeading(); } });
+compass.setManual(settings.manualHeading); $('headingSlider').value = settings.manualHeading; $('hHeadingSlider').value = settings.manualHeading;
+function updateHeading() {
+  const h = compass.current(), src = compass.on && compass.source !== 'none' && Number.isFinite(compass.heading) ? 'compass' : 'manual';
+  const t = Number.isFinite(h) ? `${Math.round(h)}° (${src})` : '—';
+  $('headingText').textContent = t; $('hHeading').textContent = 'heading ' + t;
+  // the simulated fox has a yagi on it: tell it where we point
+  if (state.fox?.link && 'heading' in state.fox.link) state.fox.link.heading = Number.isFinite(h) ? h : null;
+  chart.dirty = true;
+}
+for (const id of ['headingSlider', 'hHeadingSlider']) $(id).addEventListener('input', () => { const v = parseInt($(id).value, 10) || 0; settings.manualHeading = v; saveSettings(); compass.setManual(v); for (const o of ['headingSlider', 'hHeadingSlider']) if (o !== id) $(o).value = v; updateHeading(); });
+for (const id of ['compassBtn', 'hCompassBtn']) $(id).addEventListener('click', async () => { if (compass.on) compass.stop(); else { await compass.start(); if (compass.source === 'none') con.dim('no compass on this device: the heading slider is used'); } updateHeading(); });
+for (const id of ['northBtn', 'hNorthBtn']) $(id).addEventListener('click', () => { compass.markNorth(); for (const o of ['headingSlider', 'hHeadingSlider']) $(o).value = Math.round(compass.manual || 0); con.dim('north marked'); updateHeading(); });
+
+function captureList() { return state.captures.map((c, i) => ({ cap: c, label: c.label || `#${i + 1}`, active: c === state.capturing || (!state.capturing && i === state.captures.length - 1) })); }
+const captureNote = t => { $('captureStatus').textContent = t; $('hBearingText').textContent = t; };
+function beginCapture() {
+  if (!state.fox?.bandSet || state.capturing) return;
+  if (!state.live && !state.seeking) startLive();
+  if (!Number.isFinite(compass.current())) { captureNote('no heading: turn the compass on or drag the heading slider'); return; }
+  const c = createBearingCapture({ t: Date.now(), geo: geo.stamp(), freq: state.fox.state.freq }); c.label = `#${state.captures.length + 1}`;
+  state.capturing = c; state.liveBearing = null;
+  for (const id of ['captureBtn', 'hCaptureBtn']) { $(id).setAttribute('aria-pressed', 'true'); $(id).textContent = 'Capturing — turn a full circle'; }
+  if (settings.mode === 'bench') setScanView('bearing');
+  captureNote('turning… release when you have been all the way round');
+}
+function endCapture() {
+  const c = state.capturing; if (!c) return; state.capturing = null;
+  for (const id of ['captureBtn', 'hCaptureBtn']) { $(id).setAttribute('aria-pressed', 'false'); $(id).textContent = 'Hold to capture'; }
+  const r = c.analyze();
+  if (!r.ok && c.samples.length < 6) { captureNote(`too short (${c.samples.length} readings): hold while turning`); chart.dirty = true; return; }
+  state.captures.push(c); renderBearings();
+  captureNote(r.ok ? `bearing ${Math.round(r.bearing)}° ±${Math.round(r.width / 2)}° on ${c.freq?.toFixed(4) ?? '?'} MHz${c.geo ? '' : ' · no location: turn it on for a fix'}${r.why ? ' · ' + r.why : ''}` : `no bearing: ${r.why}`);
+  con.dim(`bearing capture ${c.label}: ${r.ok ? Math.round(r.bearing) + '°' : 'no lobe'} from ${c.samples.length} readings over ${r.coverage}°`);
+  chart.dirty = true;
+}
+for (const id of ['captureBtn', 'hCaptureBtn']) { const b = $(id); b.addEventListener('pointerdown', e => { if (b.disabled) return; b.setPointerCapture(e.pointerId); beginCapture(); }); for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) b.addEventListener(ev, endCapture); }
+function renderBearings() {
+  const tb = $('bearingBody'); tb.innerHTML = ''; $('bearingEmpty').hidden = state.captures.length > 0;
+  state.captures.forEach((c, i) => {
+    const r = c.analyze(), tr = document.createElement('tr');
+    tr.innerHTML = `<td>${new Date(c.t).toLocaleTimeString()}</td><td>${c.freq?.toFixed(4) ?? '—'}</td><td>${r.ok ? Math.round(r.bearing) + '°' : '—'}</td><td>${r.ok ? '±' + Math.round(r.width / 2) + '°' : r.why}</td><td>${c.geo ? `±${c.geo.acc} m` : 'no location'}</td><td></td>`;
+    const x = document.createElement('button'); x.type = 'button'; x.textContent = '×'; x.title = 'Remove'; x.addEventListener('click', () => { state.captures.splice(i, 1); renderBearings(); chart.dirty = true; });
+    tr.children[5].appendChild(x); tb.appendChild(tr);
+  });
+  // a fix from the last two captures that have a location and a bearing
+  const good = state.captures.filter(c => c.geo && c.analyze().ok).slice(-2);
+  state.lastFix = good.length === 2 ? fixFromBearings({ geo: good[0].geo, bearing: good[0].analyze().bearing }, { geo: good[1].geo, bearing: good[1].analyze().bearing }) : null;
+  if (good.length < 2) $('fixText').textContent = 'needs two captures with location from different places';
+  else if (!state.lastFix) $('fixText').textContent = `no fix: the two bearings (${Math.round(good[0].analyze().bearing)}°, ${Math.round(good[1].analyze().bearing)}°) are too close to parallel or point apart — move further sideways`;
+  else { const f = state.lastFix, here = geo.stamp(); $('fixText').textContent = `${f.lat.toFixed(5)}, ${f.lon.toFixed(5)} · ${Math.round(f.distB)} m from the second spot · bearings cross at ${Math.round(f.angle)}°${here ? ` · ${Math.round(distanceBetween(here, f))} m from here` : ''}`; }
+  $('fixCopyBtn').disabled = !state.lastFix;
+}
+$('fixCopyBtn').addEventListener('click', async () => { if (!state.lastFix) return; try { await navigator.clipboard.writeText(`${state.lastFix.lat.toFixed(5)}, ${state.lastFix.lon.toFixed(5)}`); $('fixCopyBtn').textContent = 'Copied'; setTimeout(() => $('fixCopyBtn').textContent = 'Copy fix', 1200); } catch { con.err('clipboard unavailable'); } });
+$('bearingClearBtn').addEventListener('click', () => { state.captures = []; renderBearings(); chart.dirty = true; });
+setInterval(() => { if (settings.mode === 'hunt') { const a = fit($('hPolar')); if (a) renderPolar(a.ctx, a.W, a.H, captureList(), { heading: compass.current(), range: rssiRange(), live: state.capturing ? state.liveBearing : null }); } }, 200);
+
 // CW identification: a callsign decoded while tuned pins and labels that channel
 function noteDecoded() {
   const f = state.fox?.state.freq; if (f == null) return;
@@ -415,7 +480,7 @@ recorder.onChange = () => {
 $('recBtn').addEventListener('click', () => recorder.on ? recorder.stop() : recorder.start());
 $('recReadingsBtn').addEventListener('click', () => download(`fox-readings-${stamp()}.csv`, recorder.readingsCsv()));
 $('recScansBtn').addEventListener('click', () => download(`fox-scans-${stamp()}.csv`, recorder.scansCsv()));
-$('recJsonBtn').addEventListener('click', () => download(`fox-session-${stamp()}.json`, sessionBlob(recorder, { app: APP_VERSION, device: state.fox?.ident.version || null, band: state.fox?.state.band || null, settings: { ...settings }, board: board.serialize() })));
+$('recJsonBtn').addEventListener('click', () => download(`fox-session-${stamp()}.json`, sessionBlob(recorder, { app: APP_VERSION, device: state.fox?.ident.version || null, band: state.fox?.state.band || null, settings: { ...settings }, board: board.serialize(), bearings: state.captures.map(c => ({ ...c.serialize(), label: c.label })) })));
 $('recClearBtn').addEventListener('click', () => recorder.clear());
 
 // ---------------------------------------------------------------- replay
@@ -449,6 +514,7 @@ $('sessLoadBtn').addEventListener('click', async () => {
     if (!n) throw new Error('the session has no readings or scans');
     if (sess.meta.settings?.attenDb != null) { settings.attenDb = sess.meta.settings.attenDb; applyAtten(); }
     if (sess.meta.board?.length) board.restore(sess.meta.board);
+    if (sess.meta.bearings?.length) { state.captures = sess.meta.bearings.map(o => { const c = restoreCapture(o); c.label = o.label; return c; }); renderBearings(); }
     enterReplay(`${n} records · ${sess.meta.device || 'unknown fox'} · saved ${sess.meta.savedAt ? new Date(sess.meta.savedAt).toLocaleString() : '?'}`);
     con.dim(`session loaded: ${sess.readings.length} readings, ${sess.scans.length} scans`);
   } catch (e) { con.err('load session: ' + e.message); }
@@ -600,7 +666,7 @@ function draw() {
   const r = fit($('rssiCanvas'));
   if (r) renderRssi(r.ctx, r.W, r.H, state.samples, { windowS: settings.windowS, range: rssiRange(), maxHold: state.max >= 0 ? state.max : null, freq: state.replaying ? (state.samples[state.samples.length - 1]?.f ?? null) : state.fox?.state.freq, events: state.events, lut: settings.heatStrip ? state.lut : null, attenDb: settings.attenDb });
   const s = fit($('scanCanvas'));
-  if (s) { if (state.scanView === 'waterfall') { wfGeom = renderScanWaterfall(s.ctx, s.W, s.H, state.rows, state.rowsF, { lut: state.lut, range: rssiRange(), hover: state.wfHover }); scanGeom = null; } else { scanGeom = renderScan(s.ctx, s.W, s.H, state.scan, { range: rssiRange(), hover: state.hover, tuned: state.fox?.state.freq }); wfGeom = null; } }
+  if (s) { if (state.scanView === 'bearing') { renderPolar(s.ctx, s.W, s.H, captureList(), { heading: compass.current(), range: rssiRange(), live: state.capturing ? state.liveBearing : null }); scanGeom = null; wfGeom = null; } else if (state.scanView === 'waterfall') { wfGeom = renderScanWaterfall(s.ctx, s.W, s.H, state.rows, state.rowsF, { lut: state.lut, range: rssiRange(), hover: state.wfHover }); scanGeom = null; } else { scanGeom = renderScan(s.ctx, s.W, s.H, state.scan, { range: rssiRange(), hover: state.hover, tuned: state.fox?.state.freq }); wfGeom = null; } }
   if (state.audio.view === 'spectrum') { const a = fit($('audioCanvas')); if (a) { const st = cwDec.status(); renderAudio(a.ctx, a.W, a.H, capture.running ? capture.spectrum() : null, { toneHz: st.toneHz, cwOn: st.on, cwFloor: st.floor, cwPeak: st.peak, cwLevel: st.level }); } }
   $('pngRssiBtn').disabled = !state.samples.length;
 }
@@ -614,6 +680,7 @@ setInterval(() => { if (state.live) chart.dirty = true; }, 250);
 const scanCanvas = $('scanCanvas'), tip = $('scanTip');
 scanCanvas.addEventListener('pointermove', e => {
   const rect = scanCanvas.getBoundingClientRect();
+  if (state.scanView === 'bearing') return;
   if (state.scanView === 'waterfall') {
     if (!wfGeom || !state.rows.length) return;
     const col = wfGeom.colAt(e.clientX - rect.left), row = wfGeom.rowAt(e.clientY - rect.top);
@@ -632,6 +699,7 @@ scanCanvas.addEventListener('pointermove', e => {
 });
 scanCanvas.addEventListener('pointerleave', () => { state.hover = null; state.wfHover = null; tip.style.display = 'none'; chart.dirty = true; });
 scanCanvas.addEventListener('click', e => {
+  if (state.scanView === 'bearing') return;
   if (state.scanView === 'waterfall') { if (wfGeom && state.wfHover && state.rowsF) { $('freq').value = state.rowsF[state.wfHover.col].toFixed(4); tune(); } return; }
   if (!scanGeom || !state.scan) return;
   const rect = scanCanvas.getBoundingClientRect(); const i = scanGeom.indexAt(e.clientX - rect.left);
@@ -639,4 +707,4 @@ scanCanvas.addEventListener('click', e => {
 });
 
 applyModel();
-setMode(settings.mode === 'hunt' ? 'hunt' : 'bench'); renderBoard();
+setMode(settings.mode === 'hunt' ? 'hunt' : 'bench'); renderBoard(); renderBearings(); updateHeading();

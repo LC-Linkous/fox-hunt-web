@@ -52,7 +52,7 @@ The simulated fox and session replay work everywhere.
   20, 30, 40 and sums), applied as an offset in the log and shown on the
   plot as a step, never to the raw byte; "no attenuator" is the default.
 
-## v0.6 — bearing (phone)
+## v0.6 — bearing (phone) — shipped
 
 - **Bearing capture**: hold, rotate, release; RSSI against heading from the
   device compass; polar plot; peak bearing and a width estimate; several
