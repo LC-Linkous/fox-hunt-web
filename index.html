@@ -46,7 +46,7 @@
     <a href="about.html">About</a>
     <a href="https://github.com/LC-Linkous/fox-hunt-web">Source</a>
     <a href="https://github.com/HamRadioVillage/dc34fox">The fox</a>
-    <a href="https://lc-linkous.github.io/">Portfolio</a>
+    <a href="https://lc-linkous.github.io/tools">Other tools</a>
   </nav>
 </header>
 <p class="notice" id="noSerial" hidden>This browser can't open USB serial ports, so a fox can't be connected here. Serial works in <b>Chrome</b> or <b>Edge</b> on a laptop or desktop, and in <b>Chrome for Android</b> with a USB-OTG cable; it does not exist on iPhone or iPad. The audio decoders, session replay and the simulated fox work here. <a href="about.html">About → platforms</a>.</p>
@@ -365,15 +365,45 @@
         <button class="btn" type="submit" disabled>Send</button>
       </form>
     </section>
+
+    <section class="firmware" id="firmwareSection" aria-label="Firmware">
+      <h2>Firmware for the fox</h2>
+      <p class="hint" style="margin:0 0 10px">The fox needs this page's <code>code.py</code> on it once. The XIAO ESP32-C3 has no USB drive, so the page writes the file through CircuitPython's REPL over the same USB serial connection — the same thing Thonny does — and reboots into it. Every fox is assumed to be running CircuitPython already (the stock DC34 fox is).</p>
+      <div class="fw-grid">
+        <div class="field"><label for="fwBand">SA868 fitted to this fox</label>
+          <select id="fwBand" style="width:100%"><option value="">leave as it is on the board</option><option value="vhf">VHF (2 m)</option><option value="uhf">UHF (70 cm)</option><option value="dual">dual-band</option></select>
+          <p class="hint">A setting the firmware keeps on the board, applied right after the install; one <code>code.py</code> serves every fox.</p></div>
+        <div class="field"><label for="fwCallsign">Callsign (optional)</label><input type="text" id="fwCallsign" placeholder="N0CALL" maxlength="16" style="text-transform:uppercase;width:100%">
+          <p class="hint">Stored on the board too. Needed before the transmitter can ever be armed.</p></div>
+        <div class="field" style="grid-column:1/-1"><label class="row check"><input type="checkbox" id="fwTx"> <span>Enable the transmit commands (<code>TX_ENABLED = True</code>). <span class="hint">Only with a license. The board still boots in receive and refuses to key until a callsign is stored and the session is armed; every key-down has a timer.</span></span></label></div>
+      </div>
+      <div class="tools" style="margin-top:8px">
+        <button class="btn primary" id="fwInstallBtn">Install on the fox over USB</button>
+        <button class="btn" id="fwDownloadBtn">Download code.py</button>
+        <span class="hint" id="fwVersionText" style="align-self:center">firmware —</span>
+      </div>
+      <div class="fw-progress" id="fwProgress" hidden><div class="bar"><div class="fill" id="fwFill"></div></div><span class="hint" id="fwNote"></span></div>
+      <p class="hint" id="fwStatus"></p>
+      <details class="fw-steps"><summary>What "Install" does, and doing it by hand</summary>
+        <ol>
+          <li>Opens the fox's serial port (Chrome or Edge; the chooser lists USB devices). If the fox is already connected to this page, that connection is used.</li>
+          <li>Interrupts whatever <code>code.py</code> is running (Ctrl+C), enters CircuitPython's raw REPL, writes the new file as <code>code.py.new</code>, then renames it over <code>code.py</code> — so a failed transfer leaves the old firmware in place.</li>
+          <li>Soft-reboots the board and waits for the new firmware's <code>ch&gt;</code> prompt, then applies the band and callsign above.</li>
+        </ol>
+        <p>By hand instead: download <code>code.py</code>, open it in Thonny with the interpreter set to <em>CircuitPython (generic)</em> on the fox's port, <em>File → Save As → CircuitPython device</em> as exactly <code>code.py</code>, Ctrl+D. Then disconnect Thonny — it holds the port — and connect here. A board that has never had CircuitPython flashed needs that first: <a href="https://github.com/HamRadioVillage/dc34fox#step-1--flash-circuitpython">dc34fox, step 1</a>.</p>
+        <p>Going back to the stock beacon: install <code>dc34fox</code>'s <code>code.py</code> the same way (Thonny), or any <code>code.py</code> through this page's console is out of scope — this installer only writes this project's firmware.</p>
+      </details>
+    </section>
   </main>
 </div>
 
 <footer>
   fox-hunt-web <span id="appVersion"></span> · Last updated <time id="updated" datetime="2026-10-20">2026-10-20</time> · Works in Chrome and Edge via Web Serial; audio decoding works in any browser. Page <a href="https://github.com/LC-Linkous/fox-hunt-web/blob/main/LICENSE">GPL-2.0</a>, firmware GPL-3.0.
   Maintained by <a href="https://github.com/LC-Linkous">LC Linkous</a>. For the <a href="https://github.com/HamRadioVillage/dc34fox">Ham Radio Village DC34 fox</a>; not affiliated with the Village, NiceRF, or Seeed. No license is needed to listen; one is needed to transmit, and the firmware ships with transmit disabled.
-  <span class="fw"><b>Firmware:</b> the fox needs <a id="fwLink" href="firmware/code.py" download="code.py">code.py</a> (firmware <span id="fwNeed">0.3.1</span>) saved to it once with Thonny — <a href="https://github.com/LC-Linkous/fox-hunt-web#firmware">how</a>. Also on the <a href="https://github.com/LC-Linkous/fox-hunt-web/releases/latest">latest release</a>.</span>
+  <span class="fw"><b>Firmware:</b> <a href="#firmwareSection">install from this page</a>, or download <a id="fwLink" href="firmware/code.py" download="code.py">code.py</a> (firmware <span id="fwNeed">0.3.1</span>). Also on the <a href="https://github.com/LC-Linkous/fox-hunt-web/releases/latest">latest release</a>. Runs locally too: serve the folder and open it (<a href="about.html#local">how</a>).</span>
 </footer>
 
 <script type="module" src="js/main.js"></script>
+<script>if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
 </body>
 </html>

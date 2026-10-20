@@ -79,7 +79,7 @@ ESP32 passes commands and answers between USB and the module's UART.
   firmware involved. The firmware's `volume` setting is that pad's level.
   See [Audio](#audio).
 
-## What it does (v0.6)
+## What it does (v0.7)
 
 - **Connect / detect** — reads `version` and `info`, refuses a port that is not
   a fox running this firmware, shows the module's own version string and
@@ -162,8 +162,17 @@ ESP32 passes commands and answers between USB and the module's UART.
 - **Settings** — dark / light, trace colours, waterfall palette, heat strip,
   seconds of history on screen, RSSI axis, amateur-allocations-only tuning
   (off: the module's full range).
+- **Firmware installer** at the bottom of the page: pick the SA868 band and
+  an optional callsign, tick transmit if licensed, and *Install on the fox
+  over USB*. The page writes `code.py` through CircuitPython's REPL on the
+  serial port (what Thonny does), as `code.py.new` renamed into place so a
+  failed transfer leaves the old firmware alone, reboots, waits for the new
+  prompt, then applies the band and callsign. *Download code.py* gives the
+  same file for Thonny.
+- **Offline**: after one visit over HTTPS or localhost a service worker
+  keeps the page, scripts and firmware cached; hunts rarely have signal.
 - **About** (`about.html`) — what works on which device, what the firmware
-  can and can't do, what the page keeps and asks for.
+  can and can't do, what the page keeps and asks for, running it locally.
 
 See `ROADMAP.md` for what comes next: the bench pair, the SQ wire, SSTV
 transmit.
@@ -232,6 +241,8 @@ other receiver's speaker jack.
 | `firmware/code.py` | CircuitPython firmware for the fox (the download in the page's footer) |
 | `js/device/shell-link.js`, `serial-link.js` | console framing, Web Serial transport |
 | `js/device/fox.js`, `models.js` | the device API and the three band envelopes |
+| `js/device/installer.js` | writes `code.py` through the CircuitPython raw REPL and reboots into it |
+| `sw.js` | the offline cache |
 | `js/device/demo-link.js` | the simulated fox: same byte stream, three signals, a simulated transmitter at 1/10 real time |
 | `js/plot/rssi.js`, `scan.js`, `waterfall.js`, `audio.js` | the plots; `palettes.js` is tinysa-web's |
 | `js/hunt.js` | cycle timing, autoseek decisions, the board, callsign matching — no DOM, no device |
@@ -241,7 +252,7 @@ other receiver's speaker jack.
 | `ROADMAP.md` | the plan, with the decisions recorded |
 | `js/audio/capture.js`, `fft.js`, `cw.js`, `sstv.js` | sound-card capture, FFT/Goertzel, the Morse decoder, the SSTV decoder and encoder |
 | `js/ui/`, `css/` | sidebar, console, settings, recorder, export; styles |
-| `tests/device.test.mjs`, `audio.test.mjs`, `session.test.mjs`, `hunt.test.mjs`, `bearing.test.mjs` | the device layer over the simulated fox; the decoders against synthesized audio; session round trip and replay; the hunt logic against a synthetic fox; bearing captures against a synthetic yagi sweep and a two-bearing fix (`node --test`) |
+| `tests/device.test.mjs`, `audio.test.mjs`, `session.test.mjs`, `hunt.test.mjs`, `bearing.test.mjs`, `installer.test.mjs` | the device layer over the simulated fox; the decoders against synthesized audio; session round trip and replay; the hunt logic against a synthetic fox; bearing captures against a synthetic yagi sweep and a two-bearing fix; the installer against a simulated raw REPL (`node --test`) |
 | `.github/workflows/pages.yml` | publishes the page and the firmware to GitHub Pages |
 | `.github/workflows/tests.yml` | syntax-checks every module and runs the tests |
 
@@ -286,18 +297,6 @@ pick the fox in the chooser. The fox draws under 100 mA in receive. The
 *Hunt* in the top bar gives the one-column layout for one-handed use. iPhones and iPads cannot connect (no Web Serial in
 Safari, and Apple allows no other engine); they get the audio decoders, the
 simulated fox and session replay. The About page has the full table.
-
-## Running locally
-
-Module scripts don't load from `file://` in Chrome, so serve the folder:
-
-```
-python -m http.server 8000
-# then open http://localhost:8000/
-```
-
-Web Serial works on `localhost`, so a real fox can be used this way. The
-tests need Node 22: `node --test 'tests/**/*.test.mjs'`.
 
 ## Transmit
 
@@ -376,35 +375,41 @@ encoded and decoded through the same tables, with a mean pixel error bound.
 ## Firmware
 
 The fox needs `firmware/code.py` from this repo loaded once. The XIAO
-ESP32-C3 has no USB drive, so there is no `.uf2` to drag; the file is saved to
-the board with Thonny, the same way the fox is normally programmed.
+ESP32-C3 has no USB drive, so the file goes in over the serial port through
+CircuitPython's REPL. Every fox is assumed to be running CircuitPython
+already (the stock DC34 fox is); a bare board needs that first —
+[dc34fox, Step 1](https://github.com/HamRadioVillage/dc34fox#step-1--flash-circuitpython).
 
-1. Download **`code.py`**: the link in the page's footer serves the version
-   the page was built against; the
-   [latest release](https://github.com/LC-Linkous/fox-hunt-web/releases/latest)
-   carries the same file. It is receive-only as downloaded; see
-   [Transmit](#transmit) to enable the transmitter.
-2. If the board is not already running CircuitPython, flash it first:
-   [dc34fox, Step 1](https://github.com/HamRadioVillage/dc34fox#step-1--flash-circuitpython)
-   covers it (browser tool or `esptool`, `.bin` from
-   <https://circuitpython.org/board/seeed_xiao_esp32c3/>). A board that beacons
-   already has it.
-3. Open Thonny, **Run → Configure interpreter… → CircuitPython (generic)**, pick
-   the fox's port.
-4. Open the downloaded `code.py`, **File → Save As… → CircuitPython device**,
-   save as exactly **`code.py`** at the device root (it replaces the beacon
-   firmware — keep a copy of that if you want it back).
-5. **Ctrl+D** in the shell. A healthy first boot prints
-   `foxhunt 0.2.0 xiao-esp32c3 sa868-unset` and
-   `SA868 ready; module band not set yet`, then `ch> `. The status LED
-   comes on steady once the module has answered.
-6. **Disconnect Thonny** (it holds the port), open the page, click Connect,
-   and pick the SA868 fitted to your fox from the *Module* dropdown. That is
-   sent once and kept on the board; the next boot says `sa868-dual` (or
-   `-vhf`, `-uhf`) and the page needs no prompting.
+**From the page (Chrome or Edge, any OS):** scroll to *Firmware for the
+fox*, pick the SA868 fitted, optionally a callsign, tick transmit only if
+licensed, and click *Install on the fox over USB*. The chooser lists the
+fox; the page interrupts the running program, writes the file, reboots,
+and connects to the new firmware. About 20 seconds. If a fox is already
+connected to the page, that connection is used.
 
-Going back to the stock beacon: save `dc34fox`'s `code.py` over it. The
-band and callsign stay in NVM for the next time.
+**By hand (Thonny):** *Download code.py*, open it in Thonny with the
+interpreter set to *CircuitPython (generic)* on the fox's port, *File →
+Save As… → CircuitPython device* as exactly `code.py`, Ctrl+D. A healthy
+first boot prints `foxhunt 0.3.1 xiao-esp32c3 sa868-unset` then `ch> `.
+Disconnect Thonny (it holds the port), then connect here and pick the
+module.
+
+Going back to the stock beacon: save `dc34fox`'s `code.py` over it with
+Thonny. The band and callsign stay in NVM for the next time.
+
+## Running it yourself
+
+Static files, no build step: serve the folder and open it.
+
+```
+python -m http.server 8000
+# then open http://localhost:8000/
+```
+
+Web Serial works on `localhost`, so a real fox can be used this way; module
+scripts don't load from `file://`. On your own host, Web Serial, the
+microphone, location and the compass all need HTTPS. The tests need
+Node 22: `node --test 'tests/**/*.test.mjs'`.
 
 ### Releasing
 

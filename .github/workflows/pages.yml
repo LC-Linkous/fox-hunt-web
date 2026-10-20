@@ -25,7 +25,7 @@ jobs:
       - name: Stage site
         run: |
           mkdir -p _site
-          cp -r index.html about.html css js firmware PROTOCOL.md _site/
+          cp -r index.html about.html sw.js css js firmware PROTOCOL.md _site/
       - name: Stamp last-updated date from the commit
         run: |
           D=$(git log -1 --format=%cs)

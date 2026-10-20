@@ -77,3 +77,19 @@ table.board tr.on td { background: color-mix(in srgb, var(--maxhold) 12%, transp
 .hunt-bearing .chart-wrap canvas { height: clamp(240px, 60vw, 360px); }
 table.bearings td:nth-child(3) { font-family: var(--mono); font-weight: 700; color: var(--maxhold); }
 #captureBtn[aria-pressed="true"], #hCaptureBtn[aria-pressed="true"] { background: var(--maxhold); border-color: var(--maxhold); color: #1a1a1a; }
+
+/* v0.7: scrolling on phones — a finger on a plot still scrolls the page; the hold buttons keep the touch */
+.window .chart-wrap canvas, .hunt .chart-wrap canvas { touch-action: pan-y; }
+#keyBtn, #captureBtn, #hCaptureBtn { touch-action: none; }
+
+/* firmware section under the console, led-iv-lab style */
+.firmware { padding: 14px 16px 18px; border-top: 1px solid var(--edge); }
+.firmware h2 { font-size: .95rem; margin: 0 0 6px; }
+.fw-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+@media (max-width: 700px) { .fw-grid { grid-template-columns: 1fr; } }
+.fw-progress { margin-top: 8px; display: flex; align-items: center; gap: 10px; }
+.fw-progress .bar { flex: 1; height: 8px; background: var(--grid); border-radius: 4px; overflow: hidden; }
+.fw-progress .fill { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+.fw-steps { margin-top: 10px; color: var(--ink-2); font-size: .88rem; }
+.fw-steps summary { cursor: pointer; color: var(--ink); }
+.fw-steps ol { padding-left: 20px; }

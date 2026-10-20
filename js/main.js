@@ -16,6 +16,7 @@ import { createCycleTracker, createSeeker, createBoard, findCallsigns } from './
 import { createCapture as createBearingCapture, restoreCapture, fixFromBearings, distanceBetween } from './bearing.js';
 import { createCompass } from './ui/compass.js';
 import { renderPolar } from './plot/polar.js';
+import { installCodePy, configureFirmware, firmwareVersion } from './device/installer.js';
 import { createCapture, listInputs, hasAudioCapture } from './audio/capture.js';
 import { CwDecoder } from './audio/cw.js';
 import { SstvDecoder } from './audio/sstv.js';
@@ -26,7 +27,7 @@ import { initSidebar } from './ui/sidebar.js';
 import { download, stamp, canvasPng } from './ui/export.js';
 import { createRecorder } from './ui/recorder.js';
 
-const APP_VERSION = '0.6.0';
+const APP_VERSION = '0.7.0';
 const FW_NEEDED = '0.3.1';
 const BURST = 10;                 // readings per `rssi N` while the receiver runs (~1 s of data per round trip)
 const $ = id => document.getElementById(id);
@@ -210,7 +211,7 @@ $('sqSel').addEventListener('change', async () => { try { await state.fox?.squel
 $('volSel').addEventListener('change', async () => { try { await state.fox?.volume(parseInt($('volSel').value, 10)); } catch (e) { con.err(e.message); } });
 
 function takeSample(t, rssi, f) {
-  state.samples.push({ t, rssi, f }); if (state.samples.length > 20000) state.samples.shift();
+  state.samples.push({ t, rssi, f }); if (state.samples.length > 20000) state.samples.shift(); chart.huntDirty = true;
   if (f != null) { state.cycle.feed(t, rssi); board.note(f, t, rssi); }
   if (state.capturing && rssi >= 0) { const h = compass.at(t); if (Number.isFinite(h)) { state.capturing.add(h, rssi); state.liveBearing = { h, r: rssi }; } }
   if (rssi > state.max) state.max = rssi;
@@ -294,7 +295,7 @@ $('pinPeakBtn').addEventListener('click', () => { const s = state.scan; if (!s) 
 
 // ---------------------------------------------------------------- hunt: mode, seek, board, countdown
 function setMode(m) {
-  settings.mode = m; saveSettings();
+  settings.mode = m; saveSettings(); chart.huntDirty = true; polarDirty = true;
   document.body.classList.toggle('hunt', m === 'hunt'); $('huntPanel').hidden = m !== 'hunt';
   $('modeBench').setAttribute('aria-pressed', String(m === 'bench')); $('modeHunt').setAttribute('aria-pressed', String(m === 'hunt'));
   updateHunt(); chart.dirty = true;
@@ -396,9 +397,10 @@ function updateHunt() {
   $('cycleNow').textContent = st.cycles >= 2 ? `${(st.onMs / 1000).toFixed(0)} s on / ${(st.periodMs / 1000).toFixed(0)} s · ${st.cycles} bursts` : st.cycles === 1 ? '1 burst' : '—';
   $('cycleNext').textContent = cd;
   $('hAtten').value = String([0, 3, 6, 10, 20, 30, 40].includes(settings.attenDb) ? settings.attenDb : 0);
-  if (settings.mode === 'hunt') { const a = fit($('huntCanvas')); if (a) renderRssi(a.ctx, a.W, a.H, state.samples, { windowS: Math.min(settings.windowS, 120), range: rssiRange(), maxHold: state.max >= 0 ? state.max : null, freq: state.fox?.state.freq, events: state.events, lut: settings.heatStrip ? state.lut : null, attenDb: settings.attenDb }); }
+  if (settings.mode === 'hunt' && (chart.huntDirty || live)) { chart.huntDirty = false; const a = fit($('huntCanvas')); if (a) renderRssi(a.ctx, a.W, a.H, state.samples, { windowS: Math.min(settings.windowS, 120), range: rssiRange(), maxHold: state.max >= 0 ? state.max : null, freq: state.fox?.state.freq, events: state.events, lut: settings.heatStrip ? state.lut : null, attenDb: settings.attenDb }); }
 }
-setInterval(() => { updateHunt(); if (board.list().length) renderBoard(); }, 500);
+// the half-second tick only does work while something is happening; an idle page on a phone stays idle
+setInterval(() => { const busy = state.live || state.seeking || state.replaying || state.capturing || board.list().some(x => x.cycle.status().nextAt); if (busy || chart.huntDirty) updateHunt(); if (busy && board.list().length) renderBoard(); }, 500);
 
 
 // ---------------------------------------------------------------- bearing
@@ -410,7 +412,7 @@ function updateHeading() {
   $('headingText').textContent = t; $('hHeading').textContent = 'heading ' + t;
   // the simulated fox has a yagi on it: tell it where we point
   if (state.fox?.link && 'heading' in state.fox.link) state.fox.link.heading = Number.isFinite(h) ? h : null;
-  chart.dirty = true;
+  if (state.scanView === 'bearing') chart.dirty = true;
 }
 for (const id of ['headingSlider', 'hHeadingSlider']) $(id).addEventListener('input', () => { const v = parseInt($(id).value, 10) || 0; settings.manualHeading = v; saveSettings(); compass.setManual(v); for (const o of ['headingSlider', 'hHeadingSlider']) if (o !== id) $(o).value = v; updateHeading(); });
 for (const id of ['compassBtn', 'hCompassBtn']) $(id).addEventListener('click', async () => { if (compass.on) compass.stop(); else { await compass.start(); if (compass.source === 'none') con.dim('no compass on this device: the heading slider is used'); } updateHeading(); });
@@ -433,7 +435,7 @@ function endCapture() {
   for (const id of ['captureBtn', 'hCaptureBtn']) { $(id).setAttribute('aria-pressed', 'false'); $(id).textContent = 'Hold to capture'; }
   const r = c.analyze();
   if (!r.ok && c.samples.length < 6) { captureNote(`too short (${c.samples.length} readings): hold while turning`); chart.dirty = true; return; }
-  state.captures.push(c); renderBearings();
+  state.captures.push(c); renderBearings(); polarDirty = true;
   captureNote(r.ok ? `bearing ${Math.round(r.bearing)}° ±${Math.round(r.width / 2)}° on ${c.freq?.toFixed(4) ?? '?'} MHz${c.geo ? '' : ' · no location: turn it on for a fix'}${r.why ? ' · ' + r.why : ''}` : `no bearing: ${r.why}`);
   con.dim(`bearing capture ${c.label}: ${r.ok ? Math.round(r.bearing) + '°' : 'no lobe'} from ${c.samples.length} readings over ${r.coverage}°`);
   chart.dirty = true;
@@ -456,8 +458,12 @@ function renderBearings() {
   $('fixCopyBtn').disabled = !state.lastFix;
 }
 $('fixCopyBtn').addEventListener('click', async () => { if (!state.lastFix) return; try { await navigator.clipboard.writeText(`${state.lastFix.lat.toFixed(5)}, ${state.lastFix.lon.toFixed(5)}`); $('fixCopyBtn').textContent = 'Copied'; setTimeout(() => $('fixCopyBtn').textContent = 'Copy fix', 1200); } catch { con.err('clipboard unavailable'); } });
-$('bearingClearBtn').addEventListener('click', () => { state.captures = []; renderBearings(); chart.dirty = true; });
-setInterval(() => { if (settings.mode === 'hunt') { const a = fit($('hPolar')); if (a) renderPolar(a.ctx, a.W, a.H, captureList(), { heading: compass.current(), range: rssiRange(), live: state.capturing ? state.liveBearing : null }); } }, 200);
+$('bearingClearBtn').addEventListener('click', () => { state.captures = []; renderBearings(); polarDirty = true; chart.dirty = true; });
+let polarDirty = true, lastPolarHeading = NaN;
+setInterval(() => {
+  if (settings.mode !== 'hunt') return;
+  const h = compass.current(); if (state.capturing || polarDirty || (Number.isFinite(h) && Math.abs(h - lastPolarHeading) >= 1)) { polarDirty = false; lastPolarHeading = h; const a = fit($('hPolar')); if (a) renderPolar(a.ctx, a.W, a.H, captureList(), { heading: h, range: rssiRange(), live: state.capturing ? state.liveBearing : null }); }
+}, 200);
 
 // CW identification: a callsign decoded while tuned pins and labels that channel
 function noteDecoded() {
@@ -646,6 +652,58 @@ function setAudioView(v) { state.audio.view = v; $('audioWrap').dataset.view = v
 document.querySelectorAll('[data-audio-view]').forEach(b => b.addEventListener('click', () => setAudioView(b.dataset.audioView)));
 setInterval(() => { if (capture.running) { const st = cwDec.status(); $('cwWpm').textContent = `${st.wpm.toFixed(0)} wpm · ${Math.round(st.toneHz)} Hz`; $('cwSignal').textContent = st.peak - st.floor > 6 ? `${(st.peak - st.floor).toFixed(0)} dB over the floor${st.on ? ' · key down' : ''}` : 'no tone'; chart.dirty = true; } }, 250);
 
+
+// ---------------------------------------------------------------- firmware installer
+// Writes this page's code.py to the fox through CircuitPython's REPL on the
+// serial port (what Thonny does), reboots into it, then applies the band and
+// callsign chosen above. Only this project's firmware is ever written.
+let fwText = null;
+async function loadFirmwareText() { if (fwText) return fwText; const r = await fetch('firmware/code.py', { cache: 'no-cache' }); if (!r.ok) throw new Error(`could not fetch firmware/code.py (${r.status})`); fwText = await r.text(); $('fwVersionText').textContent = `firmware ${firmwareVersion(fwText) || '?'} · ${(fwText.length / 1024).toFixed(1)} kB`; return fwText; }
+loadFirmwareText().catch(e => { $('fwVersionText').textContent = e.message; });
+const fwNote = (t, err = false) => { $('fwStatus').textContent = t; $('fwStatus').classList.toggle('err', err); };
+$('fwDownloadBtn').addEventListener('click', async () => {
+  try { const text = configureFirmware(await loadFirmwareText(), { txEnabled: $('fwTx').checked }); download('code.py', new Blob([text], { type: 'text/x-python' })); fwNote(`downloaded code.py with TX_ENABLED = ${$('fwTx').checked ? 'True' : 'False'}; save it to the fox with Thonny, or use Install.`); }
+  catch (e) { fwNote(e.message, true); }
+});
+$('fwInstallBtn').addEventListener('click', async () => {
+  const btn = $('fwInstallBtn'); if (btn.disabled) return;
+  if (!hasWebSerial()) { fwNote('this browser has no Web Serial; download code.py and use Thonny', true); return; }
+  const tx = $('fwTx').checked;
+  if (tx && !confirm('Install with the transmit commands enabled?\n\nThis needs an amateur radio license. The board still boots in receive and refuses to key until a callsign is stored and the session is armed.')) return;
+  let text; try { text = configureFirmware(await loadFirmwareText(), { txEnabled: tx }); } catch (e) { fwNote(e.message, true); return; }
+  btn.disabled = true; $('fwProgress').hidden = false; $('fwFill').style.width = '0%';
+  const prog = p => { $('fwFill').style.width = p.pct + '%'; $('fwNote').textContent = p.note; };
+  // use the open connection if there is one; otherwise open a port just for this
+  stopLive(); stopScanLoop(); stopSeek(); stopTxPoll();
+  let link = state.fox?.link, opened = false;
+  const wasDemo = state.demo;
+  try {
+    if (wasDemo) throw new Error('the simulated fox has nothing to install onto; connect a real fox first (or leave it disconnected and Install opens the port chooser)');
+    if (!link) { link = new SerialLink(); link.onRaw = b => { if (settings.rawBytes) con.dim('rx ' + b.length + ' B: ' + JSON.stringify(new TextDecoder().decode(b)).slice(0, 200)); }; await link.open(); opened = true; con.dim('installer: port opened'); }
+    else con.dim('installer: using the open connection');
+    fwNote('installing…');
+    const r = await installCodePy(link, text, { onProgress: prog });
+    con.dim(`installer: ${r.version || 'rebooted'}`);
+    // the firmware is up: identify it, then apply the settings from the form
+    const fox = new Fox(link); fox.onWarning = t => con.err('warning: ' + t);
+    link.onTx = cmd => con.tx(cmd); link.onRx = (body, meta) => con.reply(body, meta);
+    if (!opened) { state.fox = null; }                                  // the old Fox object described the old firmware
+    await fox.identify();
+    state.fox = fox; state.demo = false;
+    const band = $('fwBand').value, cs = $('fwCallsign').value.trim();
+    if (band) { await fox.band(band); con.dim(`installer: band set to ${band}`); }
+    if (cs) { await fox.callsign(cs); con.dim(`installer: callsign ${cs.toUpperCase()} stored`); }
+    applyModel(); updateHeading();
+    setStatus(`Connected · ${fox.ident.label}`, 'ok'); if (!fox.bandSet) setStatus('Connected · band not set — pick the module ↑', 'err');
+    fwNote(`installed ${r.version || 'the firmware'}${band ? `, band ${band}` : ''}${cs ? `, callsign ${cs.toUpperCase()}` : ''}. The fox is connected and ready.`);
+    chart.dirty = true;
+  } catch (e) {
+    fwNote('install failed: ' + e.message, true); con.err('installer: ' + e.message);
+    if (opened) { try { await link.close(); } catch {} }
+    else if (state.fox) { try { await state.fox.identify(); } catch {} }         // whatever is on the board now, reflect it
+  } finally { btn.disabled = false; setTimeout(() => { $('fwProgress').hidden = true; }, 1500); }
+});
+
 // ---------------------------------------------------------------- console
 async function sendManual(cmd) {
   if (!state.fox) { con.err('not connected'); return; }
@@ -656,7 +714,7 @@ async function sendManual(cmd) {
 // ---------------------------------------------------------------- drawing
 let scanGeom = null, wfGeom = null;
 function fit(canvas) {
-  const dpr = window.devicePixelRatio || 1, W = canvas.clientWidth, H = canvas.clientHeight;
+  const dpr = Math.min(2, window.devicePixelRatio || 1), W = canvas.clientWidth, H = canvas.clientHeight;   // capped: a 3× phone screen is not worth 9× the pixels on a plot
   if (!W || !H) return null;
   if (canvas.width !== W * dpr || canvas.height !== H * dpr) { canvas.width = W * dpr; canvas.height = H * dpr; }
   const ctx = canvas.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
@@ -672,7 +730,9 @@ function draw() {
 }
 function frame() { if (chart.dirty) { chart.dirty = false; draw(); } requestAnimationFrame(frame); }
 requestAnimationFrame(frame);
-window.addEventListener('resize', () => { chart.dirty = true; });
+// a phone's address bar collapsing during a scroll fires resize with the width unchanged: not a reason to redraw
+let lastW = window.innerWidth, resizeT = null;
+window.addEventListener('resize', () => { if (window.innerWidth === lastW) return; clearTimeout(resizeT); resizeT = setTimeout(() => { lastW = window.innerWidth; chart.dirty = true; }, 120); });
 // live redraw while the receiver runs so the time axis keeps moving
 setInterval(() => { if (state.live) chart.dirty = true; }, 250);
 

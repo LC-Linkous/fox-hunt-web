@@ -29,7 +29,7 @@
   <h1>fox-hunt-web</h1>
   <span class="status"><span id="statusText">About</span></span>
   <span class="spacer"></span>
-  <nav><a href="./">Back to the tool</a><a href="https://github.com/LC-Linkous/fox-hunt-web">Source</a><a href="https://github.com/HamRadioVillage/dc34fox">The fox</a></nav>
+  <nav><a href="./">Back to the tool</a><a href="https://github.com/LC-Linkous/fox-hunt-web">Source</a><a href="https://github.com/HamRadioVillage/dc34fox">The fox</a><a href="https://lc-linkous.github.io/tools">Other tools</a></nav>
 </header>
 
 <main class="about">
@@ -63,6 +63,13 @@
 <li><b>Location</b> — off by default. When on, a badge shows, the fix's accuracy and age are displayed, a fix older than 15 s is not used, and lat/lon/accuracy go into their own columns of the log.</li>
 <li><b>Compass</b> (bearing helper, a later version) — asked for only when you start a bearing capture.</li>
 <li><b>USB serial</b> — the browser's chooser shows the fox; the page refuses a device that does not answer like this firmware.</li>
+</ul>
+
+<h2 id="local">Running it yourself, and offline</h2>
+<ul>
+<li><b>Locally.</b> The page is static files with no build step. Clone or download the repo, serve the folder (<code>python -m http.server 8000</code>, or any static server), open <code>http://localhost:8000/</code>. Web Serial works on <code>localhost</code>, so a real fox can be used this way; opening <code>index.html</code> straight from the disk does not work because module scripts don't load from <code>file://</code>.</li>
+<li><b>On your own site.</b> Copy the folder as it is. Web Serial, the microphone, location and the compass all need HTTPS (or localhost); a plain <code>http://</code> host will show the page but cannot connect to anything.</li>
+<li><b>Offline.</b> After one visit over HTTPS or localhost, a service worker keeps the page, its scripts, the firmware file and this page cached, so it loads with no network — a hunt rarely has signal. The cache is refreshed in the background when the network is there; a new version is picked up on the next load.</li>
 </ul>
 
 <h2>Credits and licenses</h2>

@@ -63,7 +63,7 @@ The simulated fox and session replay work everywhere.
 - Captures stamped with location and saved with the session, so two
   captures from two spots give a fix on paper.
 
-## v0.7 — bench and firmware
+## v0.7 — bench and firmware (installer, offline and the scroll fix shipped in 0.7.0; the rest pending)
 
 - **Bench pair**: two serial ports in one page, A (transmitter, beacon) and
   B (receiver, decoder); the whole chain on dummy loads on one table.
@@ -88,6 +88,10 @@ The simulated fox and session replay work everywhere.
   loaded into the hunt board in one go.
 
 ## Decisions
+
+- **No sensors on the fox.** The fox is a transmit beacon for most of its
+  life; hunt-only hardware (compass, GPS) does not go on it. Bench = fox on
+  a laptop, Hunt = fox on an Android phone, which has both.
 
 - **Serial on mobile is Android-only.** iOS gets audio, replay and the
   simulated fox. The no-serial banner names the platforms.

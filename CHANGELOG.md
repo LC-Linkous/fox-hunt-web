@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.7.0 — install from the page, offline, phones that scroll
+
+- **Firmware installer** on the page: band, callsign, TX gate; writes
+  `code.py` through the CircuitPython raw REPL (`code.py.new` → rename),
+  reboots, identifies, applies the settings. Download still there.
+- **Offline**: service worker caches the page, scripts and firmware.
+- **Phone scrolling**: plots use `touch-action: pan-y` (hold buttons keep
+  `none`); resize is debounced and ignores height-only changes (the address
+  bar); device-pixel ratio capped at 2 for plots; the hunt-mode timers
+  redraw only when something changed — zero canvas work on an idle page.
+- Nav: "Other tools" → lc-linkous.github.io/tools. About: running locally
+  and offline.
+- Tests: 4 installer tests against a simulated raw REPL (38 total).
+
 ## v0.6.0 — bearing
 
 - **Bearing capture**: hold, turn, release; 5° bins, lobe centre by
