@@ -6,7 +6,7 @@
   Source and license: https://github.com/LC-Linkous/fox-hunt-web
   Markup only. Styles in css/, behaviour in js/ (ES modules — serve over http, not file://).
 -->
-<html lang="en" data-theme="dark" data-traces="instrument">
+<html lang="en" data-theme="dark" data-traces="instrument" data-app="fox-hunt-web">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -31,9 +31,9 @@
       <option value="dual">SA868 dual-band</option>
     </select>
   </label>
-  <div class="views mode-tabs" role="tablist" aria-label="Layout">
-    <button class="btn small" id="modeBench" role="tab" aria-pressed="true" title="Every section and window">Bench</button>
-    <button class="btn small" id="modeHunt" role="tab" aria-pressed="false" title="One column: readout, countdown, board. For a phone and a yagi.">Hunt</button>
+  <div class="views mode-tabs" role="group" aria-label="Layout">
+    <button class="btn small" id="modeBench"  aria-pressed="true" title="Every section and window">Bench</button>
+    <button class="btn small" id="modeHunt"  aria-pressed="false" title="One column: readout, countdown, board. For a phone and a yagi.">Hunt</button>
   </div>
   <span class="status" id="status"><span class="dot"></span><span id="statusText">Not connected</span></span>
   <span class="badge" id="rxBadge" hidden title="PTT is held high by the firmware; this build cannot transmit">RX only</span>
@@ -44,6 +44,7 @@
   <span class="spacer"></span>
   <nav>
     <a href="about.html">About</a>
+    <a href="pins.html">Pins</a>
     <a href="https://github.com/LC-Linkous/fox-hunt-web">Source</a>
     <a href="https://github.com/HamRadioVillage/dc34fox">The fox</a>
     <a href="https://lc-linkous.github.io/tools">Other tools</a>
@@ -88,9 +89,8 @@
         <div class="tools"><button class="btn small" id="pinBtn" disabled title="Put the tuned frequency on the hunt board">Pin to board</button></div>
       </div>
     </section>
-
     <section data-section="scan">
-      <h2><button type="button" aria-expanded="false">Scan</button></h2>
+      <h2><button type="button" aria-expanded="false">Scan &amp; seek</button></h2>
       <div class="body">
         <p class="hint" style="margin:0 0 8px">Steps the receiver across a channel list and reads RSSI on each. Click a bar to tune there. About 150 ms per channel; 128 channels at most.</p>
         <div class="two-col">
@@ -120,11 +120,91 @@
         <div class="tools"><button class="btn small" id="seekSkipBtn" disabled title="Move on now">Skip</button><button class="btn small" id="seekLockBtn" disabled aria-pressed="false" title="Stay on this channel until unlocked">Lock</button><span class="hint" id="seekStatus" style="align-self:center"></span></div>
       </div>
     </section>
-
+    <section data-section="hunt">
+      <h2><button type="button" aria-expanded="false">Hunt</button></h2>
+      <div class="body">
+        <span class="label group">Bearing</span>
+        <p class="hint" style="margin:0 0 8px">With a directional antenna: start the receiver, hold <em>Capture</em>, turn through a full circle, release. RSSI against heading is plotted and the lobe's centre is the bearing. Two captures from two places, both with location on, give a fix.</p>
+        <div class="field"><span class="label">Heading source</span>
+          <div class="tools"><button class="btn small" id="compassBtn" aria-pressed="false">Use the compass</button><button class="btn small" id="northBtn" title="I'm pointing north now: calibrates a relative sensor, trims an absolute one">Mark north</button></div>
+          <dl class="kv"><dt>Compass</dt><dd id="compassText">off</dd><dt>Heading</dt><dd id="headingText">—</dd></dl>
+          <label for="headingSlider" class="label" style="margin-top:6px">Manual heading (no compass, or on a laptop)</label>
+          <input type="range" id="headingSlider" min="0" max="359" value="0" style="width:100%"><p class="hint">Used whenever the compass has no heading. Turn the antenna and drag to match; on a bench, drag to "turn" the simulated yagi.</p></div>
+        <div class="stack"><button class="btn primary block" id="captureBtn" disabled aria-pressed="false">Hold to capture</button></div>
+        <p class="hint" id="captureStatus"></p>
+        <div class="markers-wrap" style="margin-top:8px"><table class="markers bearings" id="bearingTable"><thead><tr><th>When</th><th>MHz</th><th>Bearing</th><th>Width</th><th>Where</th><th></th></tr></thead><tbody id="bearingBody"></tbody></table><p class="hint" id="bearingEmpty">No captures yet.</p></div>
+        <dl class="kv"><dt>Fix</dt><dd id="fixText">needs two captures with location from different places</dd></dl>
+        <div class="tools"><button class="btn small" id="fixCopyBtn" disabled>Copy fix</button><button class="btn small" id="bearingClearBtn">Clear captures</button></div>
+        <span class="label group" style="margin-top:14px">Hunt board</span>
+        <p class="hint" style="margin:0 0 8px">The foxes in play. Pin a frequency here, from the receiver, from a scan, or let autoseek do it; each one keeps its own last-heard time, max, cycle timing and ID. Saved with the session.</p>
+        <div class="row"><input type="number" id="boardFreq" placeholder="MHz" step="0.0125" style="width:100%"><button class="btn small" id="boardAddBtn">Pin</button></div>
+        <div class="markers-wrap" style="margin-top:8px"><table class="markers board" id="boardTable"><thead><tr><th>MHz</th><th>ID</th><th>Heard</th><th>Max</th><th>Next</th><th>Trend</th><th></th></tr></thead><tbody id="boardBody"></tbody></table><p class="hint" id="boardEmpty">Nothing pinned yet.</p></div>
+        <div class="tools" style="margin-top:6px"><button class="btn small" id="boardClearBtn">Clear board</button></div>
+      </div>
+    </section>
+    <section data-section="audio">
+      <h2><button type="button" aria-expanded="false">Audio</button></h2>
+      <div class="body">
+        <p class="hint" style="margin:0 0 8px">The SA868's AF_OUT pad → a USB sound card → this page. Decodes a fox's Morse ID and SSTV pictures in the browser; the fox firmware is not involved.</p>
+        <div class="field"><label for="audioDev">Input</label><div class="row"><select id="audioDev" style="width:100%"><option value="">Default input</option></select><button class="btn small" id="audioRefresh" title="Re-list inputs (labels appear after the first permission)">↻</button></div></div>
+        <div class="stack"><button class="btn primary block" id="audioBtn" aria-pressed="false">Start audio</button></div>
+        <dl class="kv"><dt>Permission</dt><dd id="audioPerm">—</dd><dt>Input</dt><dd id="audioInfo">—</dd><dt>Level</dt><dd id="audioLevel">—</dd><dt>Processing</dt><dd id="audioProc">asks for: echo cancellation off, auto gain off, noise suppression off, mono, 48 kHz</dd></dl>
+        <p class="hint">Audio is decoded in memory and never stored; the decoded text and pictures are saved only when you click Save. If the browser grants a setting the page didn't ask for (an automatic gain, say), it is shown above in red — that is the usual reason a decoder "doesn't work".</p>
+        <span class="label group">CW</span>
+        <div class="two-col">
+          <div class="field"><label for="cwTone">Pitch</label><div class="row"><input type="number" id="cwTone" value="800" min="300" max="1500" step="10"><span class="suffix">Hz</span></div></div>
+          <div class="field"><label class="row check" style="margin-top:22px"><input type="checkbox" id="cwAuto" checked> <span>Follow the pitch</span></label></div>
+        </div>
+        <dl class="kv"><dt>Speed</dt><dd id="cwWpm">—</dd><dt>Signal</dt><dd id="cwSignal">—</dd></dl>
+        <div class="tools"><button class="btn small" id="cwClearBtn">Clear text</button><button class="btn small" id="cwSaveBtn" disabled>Save text</button></div>
+        <span class="label group">SSTV</span>
+        <p class="hint" style="margin:0 0 6px">Martin M1 / M2, Scottie S1 / S2, Robot36. The mode comes from the VIS header; the picture draws line by line in the Audio window.</p>
+        <dl class="kv"><dt>Status</dt><dd id="sstvStatus">waiting for a VIS header</dd></dl>
+        <div class="tools"><button class="btn small" id="sstvSaveBtn" disabled>Save picture PNG</button><button class="btn small" id="sstvResetBtn">Reset</button></div>
+      </div>
+    </section>
+    <section data-section="session">
+      <h2><button type="button" aria-expanded="false">Session</button></h2>
+      <div class="body">
+        <span class="label group">Recording</span>
+        <p class="hint" style="margin:0 0 8px">While recording, every reading and every scan is kept with a timestamp.</p>
+        <div class="stack"><button class="btn primary block" id="recBtn" aria-pressed="false">Start recording</button></div>
+        <dl class="kv">
+          <dt>Readings</dt><dd id="recReadings">0</dd>
+          <dt>Scans</dt><dd id="recScans">0</dd>
+        </dl>
+        <span class="label group">Save</span>
+        <div class="tools">
+          <button class="btn small" id="recReadingsBtn" disabled title="timestamp_iso,t_ms,frequency_mhz,rssi,lat,lon,accuracy_m">Readings CSV</button>
+          <button class="btn small" id="recScansBtn" disabled title="one row per channel per scan">Scans CSV</button>
+          <button class="btn small" id="recJsonBtn" disabled title="Everything, plus the settings and the fox's identity, as one JSON">Save session</button>
+          <button class="btn small" id="recClearBtn" disabled>Clear</button>
+        </div>
+        <span class="label group">Location</span>
+        <label class="row check"><input type="checkbox" id="geoChk"> <span>Stamp readings and scans with the device's location. <span class="hint">Off by default. A fix older than 15 s is not used. Lat, lon and accuracy go into their own columns; nothing leaves the page.</span></span></label>
+        <dl class="kv"><dt>Fix</dt><dd id="geoText">off</dd></dl>
+        <span class="label group">Replay</span>
+        <div class="tools" style="margin-bottom:6px"><button class="btn small" id="sessLoadBtn">Load session</button><span class="hint" id="sessName" style="align-self:center">A loaded session replays into the windows; the fox is left alone.</span></div>
+        <input type="range" id="clipSlider" aria-label="Replay position" min="0" max="0" value="0" style="width:100%" disabled>
+        <div class="tools">
+          <button class="btn small" id="clipPlayBtn" aria-pressed="false" disabled>Play</button>
+          <select id="clipSpeed" aria-label="Replay speed"><option value="1">1×</option><option value="2">2×</option><option value="5">5×</option><option value="10">10×</option><option value="30">30×</option></select>
+          <button class="btn small" id="clipExitBtn" disabled>Live</button>
+          <span class="hint" id="clipPos" style="align-self:center">live</span>
+        </div>
+        <span class="label group" style="margin-top:14px">Pictures and CSV</span>
+        <div class="tools">
+          <button class="btn small" id="pngRssiBtn" disabled>RSSI plot PNG</button>
+          <button class="btn small" id="pngScanBtn" disabled>Scan plot PNG</button>
+          <button class="btn small" id="scanCsvBtn" disabled title="frequency_mhz,rssi for the scan on screen">Scan CSV</button>
+        </div>
+      </div>
+    </section>
     <section data-section="transmit" id="txSection">
       <h2><button type="button" aria-expanded="false">Transmit</button></h2>
       <div class="body">
-        <p class="hint" id="txDisabledNote">This fox is running the receive-only build. To transmit, set <code>TX_ENABLED = True</code> at the top of <code>code.py</code> and save it to the board again; the board still boots in receive and refuses to key until a callsign is stored and this section is armed. A license is required.</p>
+        <span class="label group">This fox</span>
+        <p class="hint" id="txDisabledNote">This fox is running the receive-only build, so nothing here can key it. To transmit, install the firmware again from the <a href="#firmwareSection">Firmware</a> section with <em>Transmit commands</em> ticked. The board still boots in receive and refuses to key until a callsign is stored and this section is armed. A license is required.</p>
         <div id="txControls" hidden>
           <label class="field" style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" id="txArm" style="margin-top:3px"><span>I hold an amateur radio license, the callsign below is mine or my event's, and an antenna or dummy load is on the RF port. <span class="hint">Sends <code>tx arm</code>; arming lasts until disconnect or reboot.</span></span></label>
           <dl class="kv"><dt>Callsign</dt><dd id="txCallsign">—</dd><dt>State</dt><dd id="txState">—</dd></dl>
@@ -149,12 +229,7 @@
           <dl class="kv"><dt>Beacon</dt><dd id="foxStatusLine">stopped</dd></dl>
         </div>
         <p class="hint" id="txStatus"></p>
-      </div>
-    </section>
-
-    <section data-section="pair" id="pairSection">
-      <h2><button type="button" aria-expanded="false">Bench pair</button></h2>
-      <div class="body">
+        <span class="label group" style="margin-top:14px">A second fox as the beacon</span>
         <p class="hint" style="margin:0 0 8px">A second fox on another USB port is the <b>beacon</b>; the one connected above stays the <b>receiver</b> with everything on this page. Both on dummy loads, a few feet apart. Verifies a fox's TX, the cycle timing, autoseek and the decoders without going outside.</p>
         <div class="tools"><button class="btn" id="pairBtn">Pair a second fox</button><span class="hint" id="pairStatus" style="align-self:center">not paired</span></div>
         <div id="pairControls" hidden>
@@ -179,101 +254,10 @@
         <p class="hint" id="pairNote"></p>
       </div>
     </section>
-
-    <section data-section="audio">
-      <h2><button type="button" aria-expanded="false">Audio</button></h2>
+    <section data-section="setup">
+      <h2><button type="button" aria-expanded="false">Setup</button></h2>
       <div class="body">
-        <p class="hint" style="margin:0 0 8px">The SA868's AF_OUT pad → a USB sound card → this page. Decodes a fox's Morse ID and SSTV pictures in the browser; the fox firmware is not involved.</p>
-        <div class="field"><label for="audioDev">Input</label><div class="row"><select id="audioDev" style="width:100%"><option value="">Default input</option></select><button class="btn small" id="audioRefresh" title="Re-list inputs (labels appear after the first permission)">↻</button></div></div>
-        <div class="stack"><button class="btn primary block" id="audioBtn" aria-pressed="false">Start audio</button></div>
-        <dl class="kv"><dt>Permission</dt><dd id="audioPerm">—</dd><dt>Input</dt><dd id="audioInfo">—</dd><dt>Level</dt><dd id="audioLevel">—</dd><dt>Processing</dt><dd id="audioProc">asks for: echo cancellation off, auto gain off, noise suppression off, mono, 48 kHz</dd></dl>
-        <p class="hint">Audio is decoded in memory and never stored; the decoded text and pictures are saved only when you click Save. If the browser grants a setting the page didn't ask for (an automatic gain, say), it is shown above in red — that is the usual reason a decoder "doesn't work".</p>
-        <span class="label group">CW</span>
-        <div class="two-col">
-          <div class="field"><label for="cwTone">Pitch</label><div class="row"><input type="number" id="cwTone" value="800" min="300" max="1500" step="10"><span class="suffix">Hz</span></div></div>
-          <div class="field"><label class="row check" style="margin-top:22px"><input type="checkbox" id="cwAuto" checked> <span>Follow the pitch</span></label></div>
-        </div>
-        <dl class="kv"><dt>Speed</dt><dd id="cwWpm">—</dd><dt>Signal</dt><dd id="cwSignal">—</dd></dl>
-        <div class="tools"><button class="btn small" id="cwClearBtn">Clear text</button><button class="btn small" id="cwSaveBtn" disabled>Save text</button></div>
-        <span class="label group">SSTV</span>
-        <p class="hint" style="margin:0 0 6px">Martin M1 / M2, Scottie S1 / S2, Robot36. The mode comes from the VIS header; the picture draws line by line in the Audio window.</p>
-        <dl class="kv"><dt>Status</dt><dd id="sstvStatus">waiting for a VIS header</dd></dl>
-        <div class="tools"><button class="btn small" id="sstvSaveBtn" disabled>Save picture PNG</button><button class="btn small" id="sstvResetBtn">Reset</button></div>
-      </div>
-    </section>
-
-    <section data-section="bearing">
-      <h2><button type="button" aria-expanded="false">Bearing</button></h2>
-      <div class="body">
-        <p class="hint" style="margin:0 0 8px">With a directional antenna: start the receiver, hold <em>Capture</em>, turn through a full circle, release. RSSI against heading is plotted and the lobe's centre is the bearing. Two captures from two places, both with location on, give a fix.</p>
-        <div class="field"><span class="label">Heading source</span>
-          <div class="tools"><button class="btn small" id="compassBtn" aria-pressed="false">Use the compass</button><button class="btn small" id="northBtn" title="I'm pointing north now: calibrates a relative sensor, trims an absolute one">Mark north</button></div>
-          <dl class="kv"><dt>Compass</dt><dd id="compassText">off</dd><dt>Heading</dt><dd id="headingText">—</dd></dl>
-          <label for="headingSlider" class="label" style="margin-top:6px">Manual heading (no compass, or on a laptop)</label>
-          <input type="range" id="headingSlider" min="0" max="359" value="0" style="width:100%"><p class="hint">Used whenever the compass has no heading. Turn the antenna and drag to match; on a bench, drag to "turn" the simulated yagi.</p></div>
-        <div class="stack"><button class="btn primary block" id="captureBtn" disabled aria-pressed="false">Hold to capture</button></div>
-        <p class="hint" id="captureStatus"></p>
-        <div class="markers-wrap" style="margin-top:8px"><table class="markers bearings" id="bearingTable"><thead><tr><th>When</th><th>MHz</th><th>Bearing</th><th>Width</th><th>Where</th><th></th></tr></thead><tbody id="bearingBody"></tbody></table><p class="hint" id="bearingEmpty">No captures yet.</p></div>
-        <dl class="kv"><dt>Fix</dt><dd id="fixText">needs two captures with location from different places</dd></dl>
-        <div class="tools"><button class="btn small" id="fixCopyBtn" disabled>Copy fix</button><button class="btn small" id="bearingClearBtn">Clear captures</button></div>
-      </div>
-    </section>
-
-    <section data-section="board">
-      <h2><button type="button" aria-expanded="false">Hunt board</button></h2>
-      <div class="body">
-        <p class="hint" style="margin:0 0 8px">The foxes in play. Pin a frequency here, from the receiver, from a scan, or let autoseek do it; each one keeps its own last-heard time, max, cycle timing and ID. Saved with the session.</p>
-        <div class="row"><input type="number" id="boardFreq" placeholder="MHz" step="0.0125" style="width:100%"><button class="btn small" id="boardAddBtn">Pin</button></div>
-        <div class="markers-wrap" style="margin-top:8px"><table class="markers board" id="boardTable"><thead><tr><th>MHz</th><th>ID</th><th>Heard</th><th>Max</th><th>Next</th><th>Trend</th><th></th></tr></thead><tbody id="boardBody"></tbody></table><p class="hint" id="boardEmpty">Nothing pinned yet.</p></div>
-        <div class="tools" style="margin-top:6px"><button class="btn small" id="boardClearBtn">Clear board</button></div>
-      </div>
-    </section>
-
-    <section data-section="recording">
-      <h2><button type="button" aria-expanded="false">Recording</button></h2>
-      <div class="body">
-        <p class="hint" style="margin:0 0 8px">While recording, every reading and every scan is kept with a timestamp.</p>
-        <div class="stack"><button class="btn primary block" id="recBtn" aria-pressed="false">Start recording</button></div>
-        <dl class="kv">
-          <dt>Readings</dt><dd id="recReadings">0</dd>
-          <dt>Scans</dt><dd id="recScans">0</dd>
-        </dl>
-        <span class="label group">Save</span>
-        <div class="tools">
-          <button class="btn small" id="recReadingsBtn" disabled title="timestamp_iso,t_ms,frequency_mhz,rssi,lat,lon,accuracy_m">Readings CSV</button>
-          <button class="btn small" id="recScansBtn" disabled title="one row per channel per scan">Scans CSV</button>
-          <button class="btn small" id="recJsonBtn" disabled title="Everything, plus the settings and the fox's identity, as one JSON">Save session</button>
-          <button class="btn small" id="recClearBtn" disabled>Clear</button>
-        </div>
-        <span class="label group">Location</span>
-        <label class="row check"><input type="checkbox" id="geoChk"> <span>Stamp readings and scans with the device's location. <span class="hint">Off by default. A fix older than 15 s is not used. Lat, lon and accuracy go into their own columns; nothing leaves the page.</span></span></label>
-        <dl class="kv"><dt>Fix</dt><dd id="geoText">off</dd></dl>
-        <span class="label group">Replay</span>
-        <div class="tools" style="margin-bottom:6px"><button class="btn small" id="sessLoadBtn">Load session</button><span class="hint" id="sessName" style="align-self:center">A loaded session replays into the windows; the fox is left alone.</span></div>
-        <input type="range" id="clipSlider" min="0" max="0" value="0" style="width:100%" disabled>
-        <div class="tools">
-          <button class="btn small" id="clipPlayBtn" aria-pressed="false" disabled>Play</button>
-          <select id="clipSpeed" aria-label="Replay speed"><option value="1">1×</option><option value="2">2×</option><option value="5">5×</option><option value="10">10×</option><option value="30">30×</option></select>
-          <button class="btn small" id="clipExitBtn" disabled>Live</button>
-          <span class="hint" id="clipPos" style="align-self:center">live</span>
-        </div>
-      </div>
-    </section>
-
-    <section data-section="export">
-      <h2><button type="button" aria-expanded="false">Export</button></h2>
-      <div class="body">
-        <div class="tools">
-          <button class="btn small" id="pngRssiBtn" disabled>RSSI plot PNG</button>
-          <button class="btn small" id="pngScanBtn" disabled>Scan plot PNG</button>
-          <button class="btn small" id="scanCsvBtn" disabled title="frequency_mhz,rssi for the scan on screen">Scan CSV</button>
-        </div>
-      </div>
-    </section>
-
-    <section data-section="fox">
-      <h2><button type="button" aria-expanded="false">Fox configuration</button></h2>
-      <div class="body">
+        <span class="label group">This fox</span>
         <p class="hint" style="margin:0 0 8px">Settings kept on the board, in the ESP32's NVM. They survive reboots and re-saving <code>code.py</code>.</p>
         <dl class="kv">
           <dt>Firmware</dt><dd id="fwVersion">—</dd>
@@ -284,16 +268,11 @@
         </dl>
         <div class="field" style="margin-top:10px"><label for="callsign">Callsign</label>
           <div class="row"><input type="text" id="callsign" placeholder="N0CALL" maxlength="16" style="text-transform:uppercase" disabled><button class="btn small" id="callsignBtn" disabled>Save</button></div>
-          <p class="hint">Not used by this receive-only build. The transmit-capable firmware will refuse to key while this is <code>N0CALL</code>, so it is set here, once, ahead of time.</p></div>
+          <p class="hint">Kept on the board. The transmit-capable firmware refuses to key while this is <code>N0CALL</code>; the receive-only build just stores it.</p></div>
         <div class="field" style="margin-top:10px"><label class="row check"><input type="checkbox" id="sqWire" disabled> <span>SQ wire soldered to D2 <span class="sq-dot" id="sqDot" title="carrier detect"></span> <span id="sqLevel" class="dim"></span></span></label>
           <p class="hint">Only tick this once a wire joins the SA868's SQ pad (module pin 1) to the XIAO's D2. The firmware then times carrier edges itself (<code>events</code>), and the cycle countdown comes from those instead of RSSI thresholds. Kept on the board.</p></div>
         <p class="hint" id="foxStatus"></p>
-      </div>
-    </section>
-
-    <section data-section="settings">
-      <h2><button type="button" aria-expanded="false">Settings</button></h2>
-      <div class="body">
+        <span class="label group" style="margin-top:14px">This page</span>
         <form id="settingsForm">
           <div class="field"><span class="label">Theme</span>
             <div class="radios row" style="gap:16px"><label><input type="radio" name="theme" value="dark"> <span>Dark</span></label><label><input type="radio" name="theme" value="light"> <span>Light</span></label></div></div>
@@ -325,7 +304,7 @@
         <div class="hunt-tile"><div class="lbl">Next burst</div><div class="huge" id="hCountdown">—</div><div class="sub" id="hCycle">listen on a channel to learn the fox's cycle</div></div>
       </div>
       <div class="hunt-actions">
-        <button class="btn primary" id="hLiveBtn" disabled>Start receiver</button>
+        <button class="btn primary" id="hLiveBtn" disabled aria-pressed="false">Start receiver</button>
         <button class="btn" id="hSeekBtn" disabled aria-pressed="false">Seek</button>
         <button class="btn" id="hSkipBtn" disabled>Skip</button>
         <button class="btn" id="hLockBtn" disabled aria-pressed="false">Lock</button>
@@ -338,7 +317,7 @@
         <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:6px"><h2>Bearing</h2><span class="hint" id="hHeading">heading —</span></div>
         <div class="chart-wrap"><canvas id="hPolar"></canvas></div>
         <div class="hunt-actions"><button class="btn primary" id="hCaptureBtn" disabled aria-pressed="false">Hold to capture</button><button class="btn" id="hCompassBtn" aria-pressed="false">Compass</button><button class="btn" id="hNorthBtn">Mark north</button></div>
-        <input type="range" id="hHeadingSlider" min="0" max="359" value="0" style="width:100%" title="Manual heading">
+        <input type="range" id="hHeadingSlider" aria-label="Heading" min="0" max="359" value="0" style="width:100%" title="Manual heading">
         <p class="hint" id="hBearingText">Hold Capture, turn a full circle, release.</p>
       </div>
       <div class="hunt-board">
@@ -355,17 +334,17 @@
         </div>
         <div class="window">
           <div class="window-head"><h2>Channels</h2>
-            <div class="views" role="tablist" aria-label="Channels view">
+            <div class="views" role="group" aria-label="Channels view">
               <button class="btn small" data-scan-view="bars" aria-pressed="true">Bars</button>
               <button class="btn small" data-scan-view="waterfall" aria-pressed="false" title="One row per scan; scan continuously to build it">Waterfall</button>
-              <button class="btn small" data-scan-view="bearing" aria-pressed="false" title="RSSI against heading from the Bearing section">Bearing</button>
+              <button class="btn small" data-scan-view="bearing" aria-pressed="false" title="RSSI against heading from a bearing capture (Hunt section)">Bearing</button>
             </div>
             <span class="hint" id="scanHead">RSSI per channel</span></div>
           <div class="chart-wrap"><canvas id="scanCanvas"></canvas><div class="tip" id="scanTip"></div></div>
         </div>
         <div class="window wide">
           <div class="window-head"><h2>Audio</h2>
-            <div class="views" role="tablist" aria-label="Audio view">
+            <div class="views" role="group" aria-label="Audio view">
               <button class="btn small" data-audio-view="spectrum" aria-pressed="true">Passband</button>
               <button class="btn small" data-audio-view="cw" aria-pressed="false">CW text</button>
               <button class="btn small" data-audio-view="sstv" aria-pressed="false">SSTV picture</button>
@@ -389,7 +368,7 @@
         <button class="btn small" id="conCopy" type="button">Copy</button>
         <button class="btn small" id="conClear" type="button">Clear</button>
       </div>
-      <div class="log" id="log" aria-live="polite"></div>
+      <div class="log" id="log"></div>
       <form class="log-send" id="sendForm">
         <input id="sendInput" type="text" placeholder="Type a command, e.g. help, or at AT+RSSI?  (↑ ↓ for history)" autocomplete="off" disabled>
         <button class="btn" type="submit" disabled>Send</button>

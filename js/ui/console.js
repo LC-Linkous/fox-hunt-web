@@ -2,6 +2,8 @@
 // command input with history, resize handle, copy/clear.
 // SPDX-License-Identifier: GPL-2.0-only
 
+import { APP } from './sidebar.js';
+
 const COLLAPSE_AFTER = 12;
 const MAX_ENTRIES = 600;
 
@@ -52,18 +54,18 @@ export function initConsole({ log, form, input, handle, drawer, clearBtn, copyBt
       if (e.type === 'tx') lines.push(`${e.t}  ${e.text}`);
       else if (mode === 'full' && (e.type === 'rx' || e.type === 'err')) lines.push(e.text.split('\n').map(l => `${e.t}      ${l}`).join('\n'));
     }
-    const name = `nanovna-console-${mode}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.txt`;
+    const name = `${APP.replace(/-web$/, '')}-console-${mode}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.txt`;
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([lines.join('\n') + '\n'], { type: 'text/plain' })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   });
   copyBtn.addEventListener('click', async () => { try { await navigator.clipboard.writeText(log.innerText); copyBtn.textContent = 'Copied'; setTimeout(() => copyBtn.textContent = 'Copy', 1200); } catch { line('clipboard unavailable', 'err'); } });
 
   // drag to resize
   let dragging = false, startY = 0, startH = 0;
-  const saved = parseInt(localStorage.getItem('nanovna-web.consoleH') || '', 10);
+  const saved = parseInt(localStorage.getItem(APP + '.consoleH') || '', 10);
   if (saved > 120) log.style.height = saved + 'px';
   handle.addEventListener('pointerdown', e => { dragging = true; startY = e.clientY; startH = log.getBoundingClientRect().height; handle.setPointerCapture(e.pointerId); });
   handle.addEventListener('pointermove', e => { if (!dragging) return; const h = Math.max(120, Math.min(800, startH + (e.clientY - startY))); log.style.height = h + 'px'; });
-  handle.addEventListener('pointerup', () => { dragging = false; try { localStorage.setItem('nanovna-web.consoleH', String(Math.round(log.getBoundingClientRect().height))); } catch {} });
+  handle.addEventListener('pointerup', () => { dragging = false; try { localStorage.setItem(APP + '.consoleH', String(Math.round(log.getBoundingClientRect().height))); } catch {} });
 
   return { line, reply, tx: cmd => line('> ' + cmd, 'tx'), err: t => line(t, 'err'), dim: t => line(t, 'dim'), focus: () => input.focus(), setEnabled: on => { input.disabled = !on; form.querySelector('button[type=submit]').disabled = !on; } };
 }

@@ -158,3 +158,12 @@ test('TX: rx stops the beacon and unkeys', async () => {
   await fox.arm(); await fox.foxStart(); await fox.rx();
   assert.ok(!(await fox.foxStatus()).running); assert.ok(!(await fox.txStatus()).keyed);
 });
+
+test('identify rides out a chip reset on port open (boot banner lands on the first command)', async () => {
+  const link = new DemoLink({ band: 'vhf', resetOnOpen: true }); const fox = new Fox(link);
+  await link.open(); await fox.identify();
+  assert.equal(fox.model, 'sa868-vhf'); assert.deepEqual(fox.ident.build, [0, 4, 0]);
+  assert.equal(fox.state.freq, 146.565);           // info parsed cleanly after the banner
+  assert.equal(await fox.tune(146.52), 146.52);     // and the link is in step afterwards
+  await link.close();
+});

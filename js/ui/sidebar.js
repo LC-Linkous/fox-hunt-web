@@ -1,9 +1,12 @@
 // sidebar.js — accordion sections; one open at a time, remembered.
 // SPDX-License-Identifier: GPL-2.0-only
 
+/** The app's name for its localStorage keys: <html data-app="…">, so sibling tools on one origin don't share them. */
+export const APP = document.documentElement.dataset.app || 'nanovna-web';
+
 export function initSidebar(root) {
   const sections = [...root.querySelectorAll('section[data-section]')];
-  const KEY = 'nanovna-web.section';
+  const KEY = APP + '.section';
   let current = localStorage.getItem(KEY) || sections[0].dataset.section;
   function open(name) {
     current = name;
@@ -16,7 +19,7 @@ export function initSidebar(root) {
 
   // drag the right edge to resize; width remembered
   const handle = document.getElementById('sidebarHandle');
-  const WKEY = 'nanovna-web.sidebarW';
+  const WKEY = APP + '.sidebarW';
   const setW = w => document.documentElement.style.setProperty('--sidebar-w', Math.max(240, Math.min(560, w)) + 'px');
   const savedW = parseInt(localStorage.getItem(WKEY) || '', 10); if (savedW) setW(savedW);
   if (handle) {

@@ -46,7 +46,7 @@ footer .fw { display: block; margin-top: 4px; }
 body.replaying .window-head h2::after { content: ' · replay'; color: var(--warn); font-weight: 400; }
 
 /* v0.5: hunt layout */
-body.hunt .sidebar, body.hunt .sidebar-handle, body.hunt .plot-area, body.hunt .console { display: none !important; }
+body.hunt .sidebar, body.hunt .sidebar-handle, body.hunt .plot-area, body.hunt .console, body.hunt .firmware { display: none !important; }
 body.hunt .app { grid-template-columns: 1fr; }
 .hunt { max-width: 760px; width: 100%; margin: 0 auto; padding: 10px 12px 24px; display: flex; flex-direction: column; gap: 10px; }
 .hunt-top { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }

@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<!--
+  fox-hunt-web — Pins: the fox's pin map and where the two optional wires go
+  SPDX-License-Identifier: GPL-2.0-only
+  Copyright (C) 2026 Lauren Linkous
+-->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pins — fox-hunt-web</title>
+<link rel="stylesheet" href="css/theme.css">
+<link rel="stylesheet" href="css/layout.css">
+<link rel="stylesheet" href="css/components.css">
+<style>
+  .about { max-width: 920px; margin: 0 auto; padding: 18px 16px 40px; }
+  .about h2 { font-size: 1.05rem; margin: 28px 0 8px; }
+  .about p, .about li { color: var(--ink-2); line-height: 1.55; }
+  .about table { border-collapse: collapse; width: 100%; font-size: .9rem; margin: 8px 0; }
+  .about th, .about td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--edge); vertical-align: top; }
+  .about th { color: var(--ink-2); font-weight: 600; }
+  .about .lead { color: var(--ink); font-size: 1.05rem; }
+  .about code { font-family: var(--mono); }
+  .diagram { background: var(--screen); border: 1px solid var(--edge); border-radius: var(--radius); padding: 8px; margin: 10px 0; }
+  .diagram svg { width: 100%; height: auto; display: block; font-family: var(--mono); }
+  .diagram .pad { fill: var(--panel); stroke: var(--axis); }
+  .diagram .used { fill: var(--accent); fill-opacity: .25; stroke: var(--accent); }
+  .diagram .wire { fill: var(--warn); fill-opacity: .25; stroke: var(--warn); }
+  .diagram .nc { stroke-dasharray: 3 3; }
+  .diagram .lbl { fill: var(--ink); font-size: 11px; }
+  .diagram .sub { fill: var(--ink-2); font-size: 9.5px; }
+  .diagram .w { stroke: var(--warn); stroke-width: 2; fill: none; }
+  .diagram .body { fill: var(--panel); stroke: var(--edge); }
+  .key { display: flex; gap: 18px; flex-wrap: wrap; font-size: .85rem; color: var(--ink-2); margin: 4px 0 0; }
+  .key span::before { content: ''; display: inline-block; width: 12px; height: 12px; margin-right: 6px; vertical-align: -1px; border: 1px solid; border-radius: 2px; }
+  .key .k-used::before { background: color-mix(in srgb, var(--accent) 25%, transparent); border-color: var(--accent); }
+  .key .k-wire::before { background: color-mix(in srgb, var(--warn) 25%, transparent); border-color: var(--warn); }
+  .key .k-free::before { border-color: var(--axis); }
+  .warnbox { border-left: 3px solid var(--warn); padding: 6px 10px; margin: 10px 0; color: var(--ink-2); }
+</style>
+<script>try { document.documentElement.setAttribute('data-theme', JSON.parse(localStorage.getItem('fox-hunt-web.settings') || '{}').theme || 'dark'); } catch {}</script>
+</head>
+<body>
+<header class="topbar">
+  <h1>fox-hunt-web</h1>
+  <span class="status"><span id="statusText">Pins</span></span>
+  <span class="spacer"></span>
+  <nav><a href="./">Back to the tool</a><a href="about.html">About</a><a href="https://github.com/LC-Linkous/fox-hunt-web">Source</a><a href="https://github.com/HamRadioVillage/dc34fox">The fox</a><a href="https://lc-linkous.github.io/tools">Other tools</a></nav>
+</header>
+
+<main class="about">
+<p class="lead">The fox is a Seeed XIAO ESP32-C3 wired to a NiceRF SA868. This firmware uses the dc34fox pin map as it is, and nothing here is configurable: the one build targets the one board. Two pads on the SA868 are not routed on the fox PCB, and each is one optional wire away from a page feature.</p>
+
+<h2>XIAO ESP32-C3, seen from the top, USB at the top</h2>
+<div class="diagram">
+<svg viewBox="0 0 900 300" role="img" aria-label="XIAO ESP32-C3 pin map: left column D0 to D6, right column 5V, GND, 3V3, D10 to D7">
+  <rect class="body" x="360" y="14" width="180" height="272" rx="8"/>
+  <rect class="body" x="430" y="6" width="40" height="18" rx="3"/><text class="sub" x="450" y="19" text-anchor="middle">USB-C</text>
+  <rect class="body" x="382" y="60" width="136" height="150" rx="4"/><text class="sub" x="450" y="140" text-anchor="middle">ESP32-C3</text>
+  <rect class="pad" x="362" y="36" width="34" height="22" rx="3"/><text class="lbl" x="352" y="51" text-anchor="end">D0 · GPIO2 — free (strapping pin: leave it)</text>
+  <rect class="pad used" x="362" y="70" width="34" height="22" rx="3"/><text class="lbl" x="352" y="85" text-anchor="end">D1 · GPIO3 — MIC: PWM tone into the SA868</text>
+  <rect class="pad wire" x="362" y="104" width="34" height="22" rx="3"/><text class="lbl" x="352" y="119" text-anchor="end">D2 · GPIO4 — SQ wire (optional, pulled-up input)</text>
+  <rect class="pad used" x="362" y="138" width="34" height="22" rx="3"/><text class="lbl" x="352" y="153" text-anchor="end">D3 · GPIO5 — PTT (low = transmit; held high)</text>
+  <rect class="pad used" x="362" y="172" width="34" height="22" rx="3"/><text class="lbl" x="352" y="187" text-anchor="end">D4 · GPIO6 — PD (high = module awake)</text>
+  <rect class="pad used" x="362" y="206" width="34" height="22" rx="3"/><text class="lbl" x="352" y="221" text-anchor="end">D5 · GPIO7 — H/L power select</text>
+  <rect class="pad used" x="362" y="240" width="34" height="22" rx="3"/><text class="lbl" x="352" y="255" text-anchor="end">D6 · GPIO21 — UART TX → SA868 RXD (pin 16)</text>
+  <rect class="pad" x="504" y="36" width="34" height="22" rx="3"/><text class="lbl" x="548" y="51">5V — from USB</text>
+  <rect class="pad" x="504" y="70" width="34" height="22" rx="3"/><text class="lbl" x="548" y="85">GND</text>
+  <rect class="pad" x="504" y="104" width="34" height="22" rx="3"/><text class="lbl" x="548" y="119">3V3</text>
+  <rect class="pad used" x="504" y="138" width="34" height="22" rx="3"/><text class="lbl" x="548" y="153">D10 · GPIO10 — status LED</text>
+  <rect class="pad" x="504" y="172" width="34" height="22" rx="3"/><text class="lbl" x="548" y="187">D9 · GPIO9 — BOOT button (strapping)</text>
+  <rect class="pad" x="504" y="206" width="34" height="22" rx="3"/><text class="lbl" x="548" y="221">D8 · GPIO8 — free (strapping pin: leave it)</text>
+  <rect class="pad used" x="504" y="240" width="34" height="22" rx="3"/><text class="lbl" x="548" y="255">D7 · GPIO20 — UART RX ← SA868 TXD (pin 17)</text>
+</svg>
+<p class="key"><span class="k-used">used by the firmware</span><span class="k-wire">optional wire</span><span class="k-free">free or power</span></p>
+</div>
+<p>Three pads are free: <code>D0</code>, <code>D2</code> and <code>D8</code> (<code>D9</code> carries the BOOT button). <code>D0</code> (GPIO2) and <code>D8</code> (GPIO8) are ESP32-C3 strapping pins — their level at reset picks the boot mode, so anything hanging on them can stop the board booting or reflashing. <code>D2</code> (GPIO4) is the only free pad with no job at reset, which is why the SQ wire goes there.</p>
+
+<h2>SA868, as the datasheet numbers it</h2>
+<div class="diagram">
+<svg viewBox="0 0 640 170" role="img" aria-label="SA868 pins 1 to 18 with the fox's connections">
+  <rect class="body" x="20" y="20" width="600" height="80" rx="6"/><text class="sub" x="320" y="48" text-anchor="middle">NiceRF SA868 / SA868S · 1 W / 2 W FM transceiver module</text>
+  <text class="sub" x="320" y="64" text-anchor="middle">RF: pin 12 ANT → the fox's antenna connector</text>
+  <g font-size="9">
+    <rect class="pad wire" x="26"  y="100" width="26" height="18" rx="2"/><text class="lbl" x="39"  y="113" text-anchor="middle">1</text><text class="sub" x="39"  y="132" text-anchor="middle">Audio ON</text><text class="sub" x="39" y="143" text-anchor="middle">(SQ)</text>
+    <rect class="pad nc"   x="58"  y="100" width="26" height="18" rx="2"/><text class="lbl" x="71"  y="113" text-anchor="middle">2</text><text class="sub" x="71"  y="132" text-anchor="middle">NC</text>
+    <rect class="pad wire" x="90"  y="100" width="26" height="18" rx="2"/><text class="lbl" x="103" y="113" text-anchor="middle">3</text><text class="sub" x="103" y="132" text-anchor="middle">AF_OUT</text>
+    <rect class="pad nc"   x="122" y="100" width="26" height="18" rx="2"/><text class="lbl" x="135" y="113" text-anchor="middle">4</text><text class="sub" x="135" y="132" text-anchor="middle">NC</text>
+    <rect class="pad used" x="154" y="100" width="26" height="18" rx="2"/><text class="lbl" x="167" y="113" text-anchor="middle">5</text><text class="sub" x="167" y="132" text-anchor="middle">PTT</text><text class="sub" x="167" y="143" text-anchor="middle">← D3</text>
+    <rect class="pad used" x="186" y="100" width="26" height="18" rx="2"/><text class="lbl" x="199" y="113" text-anchor="middle">6</text><text class="sub" x="199" y="132" text-anchor="middle">PD</text><text class="sub" x="199" y="143" text-anchor="middle">← D4</text>
+    <rect class="pad used" x="218" y="100" width="26" height="18" rx="2"/><text class="lbl" x="231" y="113" text-anchor="middle">7</text><text class="sub" x="231" y="132" text-anchor="middle">H/L</text><text class="sub" x="231" y="143" text-anchor="middle">← D5</text>
+    <rect class="pad"      x="250" y="100" width="26" height="18" rx="2"/><text class="lbl" x="263" y="113" text-anchor="middle">8</text><text class="sub" x="263" y="132" text-anchor="middle">VBAT</text>
+    <rect class="pad"      x="282" y="100" width="26" height="18" rx="2"/><text class="lbl" x="295" y="113" text-anchor="middle">9</text><text class="sub" x="295" y="132" text-anchor="middle">GND</text>
+    <rect class="pad"      x="314" y="100" width="26" height="18" rx="2"/><text class="lbl" x="327" y="113" text-anchor="middle">10</text><text class="sub" x="327" y="132" text-anchor="middle">GND</text>
+    <rect class="pad nc"   x="346" y="100" width="26" height="18" rx="2"/><text class="lbl" x="359" y="113" text-anchor="middle">11</text><text class="sub" x="359" y="132" text-anchor="middle">NC</text>
+    <rect class="pad"      x="378" y="100" width="26" height="18" rx="2"/><text class="lbl" x="391" y="113" text-anchor="middle">12</text><text class="sub" x="391" y="132" text-anchor="middle">ANT</text>
+    <rect class="pad nc"   x="410" y="100" width="26" height="18" rx="2"/><text class="lbl" x="423" y="113" text-anchor="middle">13</text><text class="sub" x="423" y="132" text-anchor="middle">NC</text>
+    <rect class="pad nc"   x="442" y="100" width="26" height="18" rx="2"/><text class="lbl" x="455" y="113" text-anchor="middle">14</text><text class="sub" x="455" y="132" text-anchor="middle">NC</text>
+    <rect class="pad nc"   x="474" y="100" width="26" height="18" rx="2"/><text class="lbl" x="487" y="113" text-anchor="middle">15</text><text class="sub" x="487" y="132" text-anchor="middle">NC</text>
+    <rect class="pad used" x="506" y="100" width="26" height="18" rx="2"/><text class="lbl" x="519" y="113" text-anchor="middle">16</text><text class="sub" x="519" y="132" text-anchor="middle">RXD</text><text class="sub" x="519" y="143" text-anchor="middle">← D6</text>
+    <rect class="pad used" x="538" y="100" width="26" height="18" rx="2"/><text class="lbl" x="551" y="113" text-anchor="middle">17</text><text class="sub" x="551" y="132" text-anchor="middle">TXD</text><text class="sub" x="551" y="143" text-anchor="middle">→ D7</text>
+    <rect class="pad used" x="570" y="100" width="26" height="18" rx="2"/><text class="lbl" x="583" y="113" text-anchor="middle">18</text><text class="sub" x="583" y="132" text-anchor="middle">MIC_IN</text><text class="sub" x="583" y="143" text-anchor="middle">← D1</text>
+  </g>
+</svg>
+</div>
+<p>Pin numbers follow the NiceRF datasheet; where each pad physically sits on the fox PCB depends on the board revision, so find pins 1 and 3 on the silkscreen or by continuity to the module's edge before soldering. Pins 1–3 are unrouted on the current fox PCB, which is what makes them available.</p>
+
+<h2>The two wires</h2>
+<table>
+<tr><th>Wire</th><th>From</th><th>To</th><th>What it gives the page</th></tr>
+<tr><td><b>Audio</b></td><td>SA868 pin 3, <code>AF_OUT</code> (≈700 mV into 200 Ω)</td><td>a USB sound card's line or mic input, through a 10 kΩ series resistor, with a ground</td><td>The CW decoder (the fox's Morse ID) and the SSTV decoder. No firmware involvement; also works from any receiver's speaker jack.</td></tr>
+<tr><td><b>SQ</b></td><td>SA868 pin 1, <code>Audio ON</code> — the datasheet's name for the squelch output: it goes <b>low</b> while a signal opens the squelch, to switch on an external audio amplifier</td><td>XIAO <code>D2</code> (GPIO4), directly; the firmware enables the internal pull-up</td><td>Hardware-timed carrier edges (<code>events</code>), so the <em>Next burst</em> countdown is exact. Tick <em>SQ wire soldered to D2</em> under Setup once; it is kept on the board. Firmware 0.4.0+.</td></tr>
+</table>
+<div class="warnbox">The firmware never reads <code>D2</code> until the wire is declared (<code>sq on</code>), so a fox without it behaves exactly as before. Declare it on the wrong fox and the page just sees a steady "quiet". The SA868's <code>squelch</code> setting (Receiver section) decides what counts as a carrier on that pin — at squelch 0 it is open all the time and the wire reports nothing useful.</div>
+
+<h2>Checking the wire</h2>
+<ol>
+<li>Connect, tick <b>SQ wire soldered to D2</b>. The light beside it should read <em>quiet</em> with the antenna on a dead channel.</li>
+<li>Key a handheld nearby on the tuned frequency: the light goes <em>carrier</em>; unkey, it goes <em>quiet</em>. If it reads the opposite, the pad is active-high on your module — say so in an issue, the fix is one line in <code>sq_poll</code>.</li>
+<li>In the console, <code>events</code> prints <code>now …</code> and one line per edge since the last call. Start the receiver; after two bursts the hunt panel says "· SQ wire" next to the cycle.</li>
+</ol>
+
+<h2>H/L, a note for the transmit build</h2>
+<p>NiceRF's two documents disagree on pin 7: the SA868 datasheet says <em>leave open for high power, low for low power</em>; the SA868S product page says <em>low or open for low power, high for high power, and never tie it to VDD or a CMOS high</em>. The firmware drives <code>D5</code> low for <code>power low</code> and high for <code>power high</code>, like dc34fox. Before trusting the <em>Power</em> dropdown on a real antenna, check which way your module goes with a power meter or a dummy load and a nearby receiver's S-meter.</p>
+</main>
+</body>
+</html>

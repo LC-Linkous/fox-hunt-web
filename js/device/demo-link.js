@@ -22,8 +22,9 @@ const AIR = new Set();
 
 export class DemoLink extends ShellLink {
   /** opts.band: 'vhf'|'uhf'|'dual'|null (null = fresh board, band unset). opts.txEnabled mirrors TX_ENABLED. */
-  constructor({ band = 'dual', callsign = 'N0CALL', txEnabled = false } = {}) {
+  constructor({ band = 'dual', callsign = 'N0CALL', txEnabled = false, resetOnOpen = false } = {}) {
     super();
+    this.resetOnOpen = resetOnOpen;   // like the real board: opening the port resets the chip, and the boot banner lands on top of the first command
     this.band = band; this.callsign = callsign; this.txEnabled = txEnabled;
     this.armed = false; this.keyedUntil = 0; this.keyedFrom = 0; this.power = 'low'; this.wpm = 12; this.tone = 800; this.foxmsg = 'FOX'; this.foxdelay = 30;
     this.foxRunning = false; this.foxNext = 0; this.foxCycles = 0; this.foxTimer = null; this.txLog = [];   // txLog: what went on the air, for the tests
@@ -47,7 +48,9 @@ export class DemoLink extends ShellLink {
     for (let at = from + 50; at <= to; at += 50) { const l = this.carrierAt(this.freq, at); if (l !== level) { level = l; out.push([at, l ? 1 : 0]); } }
     return out;
   }
-  async open() {}
+  async open() {
+    if (this.resetOnOpen) this._send(this.enc.encode(`\r\nfoxhunt 0.4.0 xiao-esp32c3 sa868-${this.band || 'unset'}\r\nSA868 ready, receiving on ${this.freq.toFixed(4)} MHz (${this.band})\r\nreceive only: PTT is held high. type help.\r\nch> `), 400);
+  }
   info() { return 'demo'; }
   async close() { this.closed = true; this._foxStop(); AIR.delete(this); }
 
@@ -221,7 +224,7 @@ export class DemoLink extends ShellLink {
         const s = this._morseSeconds(text); this.txLog.push({ t: Date.now(), kind: 'morse', text, s });
         this.keyedFrom = Date.now(); this.keyedUntil = Date.now() + Math.min(2000, s * 100);
         body = `sent ${s.toFixed(1)}`; delay = Math.min(2000, s * 100); break; }   // 1/10 of real time
-      case 'power': { if (!a.length) { body = this.power; break; } const w = a[0].toLowerCase(); if (!['low', 'high'].includes(w)) { body = 'usage: power low|high'; break; } this.power = w; body = w; break; }
+      case 'power': { if (!a.length) { body = this.power; break; } const w = a[0].toLowerCase(); if (!['low', 'high'].includes(w)) { body = 'usage: power low|high'; break; } if (!this.txEnabled) { body = 'error: transmit commands are not enabled in this firmware build (TX_ENABLED is False)'; break; } this.power = w; body = w; break; }
       case 'wpm': { if (!a.length) { body = String(this.wpm); break; } const v = parseInt(a[0], 10); if (!(v >= 5 && v <= 35)) { body = 'usage: wpm {5..35}'; break; } this.wpm = v; body = String(v); break; }
       case 'foxdelay': { if (!a.length) { body = String(this.foxdelay); break; } const v = parseInt(a[0], 10); if (!(v >= 5 && v <= 600)) { body = 'usage: foxdelay {5..600}'; break; } this.foxdelay = v; body = String(v); break; }
       case 'foxmsg': { if (!a.length) { body = this.foxmsg; break; } const t = a.join(' ').toUpperCase(); if (t.length > 40 || !/^[A-Z0-9/?= ]+$/.test(t)) { body = 'usage: foxmsg {A-Z 0-9 / ? = and spaces, up to 40}'; break; } this.foxmsg = t; body = t; break; }

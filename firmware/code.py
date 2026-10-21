@@ -208,12 +208,30 @@ def init_pin(pin, value):
     return p
 
 
+_TICKS_PERIOD = 1 << 29             # supervisor.ticks_ms() wraps here (about 6.2 days)
+_tick_last = 0
+_tick_base = 0
+
+
 def ms():
-    return supervisor.ticks_ms()
+    """Milliseconds since boot that never wrap, so every deadline is a plain compare."""
+    global _tick_last, _tick_base
+    t = supervisor.ticks_ms()
+    if t < _tick_last:
+        _tick_base += _TICKS_PERIOD
+    _tick_last = t
+    return _tick_base + t
 
 
 def delay(ms_):
-    time.sleep(ms_ / 1000)
+    """Sleep `ms_`, sampling the SQ wire every few ms on the way (sq_poll is a no-op without the wire)."""
+    end = ms() + ms_
+    while True:
+        left = end - ms()
+        if left <= 0:
+            break
+        time.sleep(min(left, 4) / 1000)
+        sq_poll()
 
 
 def in_band(f):
@@ -321,11 +339,13 @@ def tone_on(freq):
 
 
 def tone_off():
+    """Release the PWM and give D1 back to the plain low output. Safe to call when no tone is on."""
     global mic, sound_pwm
     if sound_pwm:
         sound_pwm.deinit()
         sound_pwm = None
-    mic = init_pin(MIC_Pin, False)
+    if mic is None:                 # tone_on() released it; claim it again (claiming twice raises)
+        mic = init_pin(MIC_Pin, False)
 
 
 def key(seconds):
@@ -336,9 +356,14 @@ def key(seconds):
 
 
 def unkey():
-    tone_off()
+    """PTT high first, whatever else fails; then the tone path, then the Morse machine."""
     ptt.value = True
     state["keyed_until"] = 0
+    morse_abort()
+    try:
+        tone_off()
+    except Exception:
+        pass
 
 
 def keyed():
@@ -364,35 +389,95 @@ def tx_allowed():
     return ""
 
 
-def send_morse(text, keydown_s):
-    """Key up, send `text`, key down. Returns 'aborted' if serial input arrived."""
+# The Morse sender is a small state machine, stepped by morse_step(). The
+# beacon steps it from the main loop, so the shell keeps answering `info`,
+# `tx` and `fox` while a cycle is on the air (the page polls those once a
+# second) and a stop command ends the cycle at the next element. The
+# `morse` and `tone` commands step it locally until it finishes.
+morse = {"elems": [], "i": 0, "next_at": 0, "on": False, "active": False, "result": ""}
+
+
+def morse_plan(text):
+    """[(tone_on, ms), ...] for `text` at the current WPM, without the PTT lead and tail."""
     unit = 60000 / (state["wpm"] * 50)
-    key(keydown_s)
-    delay(TX_PTT_LEAD_MS)
-    aborted = False
+    elems = []
     first_word = True
     for word in text.upper().split():
         chars = [MORSE_MAP[c] for c in word if c in MORSE_MAP]
         if not chars:
             continue
         if not first_word:
-            delay(unit * 4)
+            elems.append((False, unit * 4))
         first_word = False
         for ch in chars:
-            if supervisor.runtime.serial_bytes_available or not keyed():
-                aborted = True
-                break
             for mark in ch:
-                tone_on(state["tone"])
-                delay(unit if mark == '.' else unit * 3)
-                tone_off()
-                delay(unit)
-            delay(unit * 2)
-        if aborted:
+                elems.append((True, unit if mark == '.' else unit * 3))
+                elems.append((False, unit))
+            elems.append((False, unit * 2))
+    return elems
+
+
+def morse_start(text, keydown_s):
+    """Key up and begin sending `text`; morse_step() does the rest."""
+    morse["elems"] = [(False, TX_PTT_LEAD_MS)] + morse_plan(text) + [(False, 200)]
+    morse["i"] = 0
+    morse["on"] = False
+    morse["active"] = True
+    morse["result"] = ""
+    key(keydown_s)
+    morse["next_at"] = ms()
+
+
+def morse_step():
+    """Advance the sender if its current element has elapsed. Unkeys itself at the end."""
+    if not morse["active"]:
+        return
+    if not keyed():                 # the deadline (or a stop) took PTT away: finish quietly
+        morse_finish("aborted")
+        return
+    if ms() < morse["next_at"]:
+        return
+    if morse["i"] >= len(morse["elems"]):
+        morse_finish("sent")
+        return
+    on, dur = morse["elems"][morse["i"]]
+    morse["i"] += 1
+    if on and not morse["on"]:
+        tone_on(state["tone"])
+    elif not on and morse["on"]:
+        tone_off()
+    morse["on"] = on
+    morse["next_at"] = ms() + int(dur)
+
+
+def morse_finish(result):
+    morse["active"] = False
+    morse["on"] = False
+    morse["result"] = result
+    if keyed():
+        ptt.value = True
+        state["keyed_until"] = 0
+    tone_off()
+
+
+def morse_abort():
+    """Called by unkey(): stop sending without touching PTT (unkey already did)."""
+    if morse["active"]:
+        morse["active"] = False
+        morse["on"] = False
+        morse["result"] = "aborted"
+
+
+def send_morse(text, keydown_s):
+    """Blocking form for the `morse` command: step until done. A keypress from a human aborts."""
+    morse_start(text, keydown_s)
+    while morse["active"]:
+        morse_step()
+        if supervisor.runtime.serial_bytes_available:
+            unkey()
             break
-    delay(200)
-    unkey()
-    return "aborted" if aborted else "sent"
+        delay(2)
+    return morse["result"]
 
 
 def morse_seconds(text):
@@ -409,14 +494,18 @@ def morse_seconds(text):
 
 
 def fox_cycle():
-    """One beacon cycle: callsign + message in Morse. Called from the main loop."""
+    """Begin one beacon cycle: callsign + message in Morse. The main loop steps it and schedules the next."""
     text = "%s %s" % (state["callsign"], state["foxmsg"])
-    r = send_morse(text, morse_seconds(text) + 2)
+    morse_start(text, morse_seconds(text) + 2)
+    led.value = True
+
+
+def fox_cycle_done():
+    """Called by the main loop when a cycle's Morse has finished."""
     state["fox_cycles"] += 1
     state["fox_next"] = ms() + state["foxdelay"] * 1000
-    if r == "aborted":
-        state["fox_running"] = False
     led.value = state["connected"]
+
 
 # ---------------------------------------------------------------- SQ wire
 sq = None
@@ -471,9 +560,15 @@ def read_command():
         c = sys.stdin.read(1)
         if c == "\r" or c == "\n":
             if _inbuf == "" and c == "\n":
-                continue            # the \n of a \r\n pair
+                continue            # a lone \n, or the \n of a pair that arrived late
             line = _inbuf
             _inbuf = ""
+            if c == "\r" and supervisor.runtime.serial_bytes_available:
+                c2 = sys.stdin.read(1)
+                if c2 != "\n":
+                    _inbuf = c2     # not a pair: keep the byte for the next line
+            # the \n of a \r\n pair is swallowed here, not left in the buffer: the
+            # burst, scan and Morse loops treat any pending byte as "stop"
             return line
         if c in ("\x08", "\x7f"):   # backspace for humans in a terminal
             _inbuf = _inbuf[:-1]
@@ -501,6 +596,8 @@ def cmd_version(args):
 
 
 def cmd_info(args):
+    if not state["connected"]:
+        module_connect()            # a module that was slow to power up gets another chance
     out("firmware: %s %s" % (FW_NAME, FW_VERSION))
     out("board: %s" % BOARD_NAME)
     out("module: %s %s" % (module_name(), "connected" if state["connected"] else "NOT RESPONDING"))
@@ -543,6 +640,9 @@ def cmd_band(args):
     if name not in BANDS:
         out("usage: band vhf|uhf|dual")
         return
+    if keyed():
+        out("error: keyed; send `tx off` first")
+        return
     changed = name != state["band"]
     state["band"] = name
     if changed or not in_band(state["freq"]):
@@ -580,6 +680,9 @@ def cmd_tune(args):
         return
     if not in_band(f):
         out("error: %.4f MHz is outside %s" % (f, band_text()))
+        return
+    if keyed():
+        out("error: keyed; send `tx off` first")
         return
     state["freq"] = f
     r = module_set_group()
@@ -632,6 +735,9 @@ def cmd_scan(args):
         return
     if not (in_band(start) and in_band(stop)):
         out("error: range is outside %s" % band_text())
+        return
+    if keyed():
+        out("error: keyed; send `tx off` first")
         return
     count = int((stop - start) / (step / 1000.0) + 0.5) + 1
     if count > SCAN_MAX_CHANNELS:
@@ -801,7 +907,7 @@ def cmd_morse(args):
         return
     if tx_refuse():
         return
-    out("%s %.1f s" % (send_morse(text, morse_seconds(text) + 2), morse_seconds(text)))
+    out("%s %.1f" % (send_morse(text, morse_seconds(text) + 2), morse_seconds(text)))
 
 
 def cmd_power(args):
@@ -811,6 +917,9 @@ def cmd_power(args):
     w = args[0].lower()
     if w not in ("low", "high"):
         out("usage: power low|high")
+        return
+    if not TX_ENABLED:
+        out("error: transmit commands are not enabled in this firmware build (TX_ENABLED is False)")
         return
     state["power"] = w
     hl.value = (w == "high")
@@ -962,12 +1071,17 @@ while True:
     # key-down deadline: nothing stays keyed past its timer, whatever the host does
     if keyed() and ms() >= state["keyed_until"]:
         unkey()
-    # the beacon runs from here so the shell stays responsive between cycles
-    if state["fox_running"] and not keyed() and ms() >= state["fox_next"]:
+    # the beacon's Morse is stepped from here, so the shell answers during a cycle
+    if morse["active"]:
+        morse_step()
+        if not morse["active"] and state["fox_running"]:
+            fox_cycle_done()
+            if morse["result"] == "aborted":
+                state["fox_running"] = False
+    elif state["fox_running"] and not keyed() and ms() >= state["fox_next"]:
         if tx_allowed():
             state["fox_running"] = False
         else:
-            led.value = True
             fox_cycle()
     line = read_command()
     if line is None:

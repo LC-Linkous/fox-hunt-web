@@ -29,7 +29,7 @@
   <h1>fox-hunt-web</h1>
   <span class="status"><span id="statusText">About</span></span>
   <span class="spacer"></span>
-  <nav><a href="./">Back to the tool</a><a href="https://github.com/LC-Linkous/fox-hunt-web">Source</a><a href="https://github.com/HamRadioVillage/dc34fox">The fox</a><a href="https://lc-linkous.github.io/tools">Other tools</a></nav>
+  <nav><a href="./">Back to the tool</a><a href="pins.html">Pins</a><a href="https://github.com/LC-Linkous/fox-hunt-web">Source</a><a href="https://github.com/HamRadioVillage/dc34fox">The fox</a><a href="https://lc-linkous.github.io/tools">Other tools</a></nav>
 </header>
 
 <main class="about">
@@ -63,7 +63,7 @@
 <li><b>Nothing leaves the browser.</b> There is no server; the page is static files. Settings live in this browser's local storage. Logs exist only while the page is open unless you save them.</li>
 <li><b>Microphone</b> — asked for only when you start audio. The page asks for echo cancellation, automatic gain and noise suppression <em>off</em> (they ruin Morse timing and SSTV tones) and shows what the browser actually granted. Audio is decoded in memory and never stored; decoded text and pictures are saved only when you click Save.</li>
 <li><b>Location</b> — off by default. When on, a badge shows, the fix's accuracy and age are displayed, a fix older than 15 s is not used, and lat/lon/accuracy go into their own columns of the log.</li>
-<li><b>Compass</b> (bearing helper, a later version) — asked for only when you start a bearing capture.</li>
+<li><b>Compass</b> — asked for only when you press the Compass button in the Hunt section (iOS asks; Android Chrome just provides it). The heading slider works without one.</li>
 <li><b>USB serial</b> — the browser's chooser shows the fox; the page refuses a device that does not answer like this firmware.</li>
 </ul>
 

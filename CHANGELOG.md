@@ -1,5 +1,61 @@
 # Changelog
 
+## v0.9.0 — audit, simulated hardware, pins
+
+A critical review of the page and the firmware, with two new test layers
+that would have caught what it found.
+
+- **Firmware 0.4.0 fixes** (all in the TX build unless noted):
+  - `tone_off()` re-claimed D1 on every unkey (`ValueError: D1 in use`);
+    the key-down deadline path would have crashed `code.py` with PTT low.
+    `unkey()` now releases PTT first, whatever else fails. `rx` on the
+    receive-only build returned that error too.
+  - The beacon aborted at its first Morse element on any serial byte — and
+    the page polls `tx`/`fox` once a second. A beacon cycle is now a state
+    machine stepped from the main loop: the shell answers during a cycle,
+    and `fox stop`/`tx off`/`tx disarm`/`rx` end it at the next element.
+    `morse` and `tone` stay blocking (the page never sends during them).
+  - The page's `\r\n` left the `\n` queued, which `rssi N`, `scan` and
+    Morse read as "stop" (receive-only build too: `rssi 10` gave one line).
+  - The SQ wire was sampled only between commands; it is now sampled inside
+    every wait, so an edge during an `rssi 10` burst is stamped on time.
+  - `supervisor.ticks_ms()` wraps after 6.2 days; `ms()` no longer does.
+  - `tune`/`scan`/`band` refuse while keyed. `info` retries the SA868
+    handshake if it failed at boot. `power` is refused in the RX build.
+- **Page fixes**: "Pin strongest" never enabled after a scan; a stale Module
+  dropdown could rewrite a different fox's stored band (now only a fox with
+  no band is written); a failed connect left a half-connected state; stop
+  then start could leave two receiver/scan/seek loops running (generation
+  counters); an armed or beaconing fox found at connect is now polled and
+  the receiver says why it waits; TX stops a seek; scan and tune refuse while
+  keyed; the 1 Hz TX poll no longer overwrites a field being typed in; a
+  pinned channel's cycle tracker was fed twice per reading; error loops give
+  up after five failures; the installer drains the link first and recovers a
+  board left in the raw REPL; identify tolerates the boot banner landing on
+  the first command; `pagehide` sends `rx` when keyed; a custom attenuator
+  shows in Hunt mode; the firmware section is hidden in Hunt mode.
+- **Service worker**: network first with a 4 s budget, cache as the
+  fallback, one versioned set — no more mixed old/new modules after a
+  deploy, and the installer never flashes a cached previous release.
+- **Sidebar regrouped** into seven sections in hunt order: Receiver, Scan &
+  seek, Hunt (bearing + board), Audio, Session (recording, location, replay,
+  pictures/CSV), Transmit (this fox + a second fox as beacon), Setup (this
+  fox + this page). Same controls, same ids.
+- **Pins page** (`pins.html`): the XIAO ESP32-C3 and SA868 pin maps as the
+  fox uses them, where the AF_OUT and SQ wires go and why D2, how to check
+  the wire, the H/L datasheet discrepancy.
+- **Tests**: `tests/firmware/` runs the real `code.py` on simulated
+  CircuitPython with a simulated SA868 (25 tests, ~10 s); `tests/page/`
+  drives the page in headless Chromium against the simulated fox (12
+  flows); `tests/shell-link.test.mjs` covers framing; DemoLink can simulate
+  a chip reset on open and refuses `power` in the RX build like the
+  firmware. CI runs all three layers. 47 node + 25 firmware + 12 page.
+- Shared kit (port to tinysa-web/nanovna-web): `<html data-app>` scopes
+  localStorage keys and the console download name per tool; ShellLink
+  matches the echo as a whole line, not a substring.
+- Docs corrected to match: PROTOCOL (ticks, beacon replies, SQ sampling),
+  README (TX via the installer, section names), About (compass).
+
 ## v0.8.0 — the SQ wire and the bench pair
 
 - **Firmware 0.4.0**: optional SQ wire on `D2` (`sq on|off`, persisted in

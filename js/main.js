@@ -27,7 +27,7 @@ import { initSidebar } from './ui/sidebar.js';
 import { download, stamp, canvasPng } from './ui/export.js';
 import { createRecorder } from './ui/recorder.js';
 
-const APP_VERSION = '0.8.0';
+const APP_VERSION = '0.9.0';
 const FW_NEEDED = '0.4.0';
 const BURST = 10;                 // readings per `rssi N` while the receiver runs (~1 s of data per round trip)
 const $ = id => document.getElementById(id);
@@ -37,13 +37,15 @@ const state = {
   fox: null, demo: false,
   samples: [], max: -1, events: [], live: false, scanning: false, scanLoop: false,
   scan: null, hover: null, rate: null,
-  keyed: false, foxRunning: false, txPoll: null,
+  keyed: false, foxRunning: false, txPoll: null, connecting: false,
+  gen: { live: 0, scan: 0, seek: 0 },   // bumped on every stop: a loop that wakes from an await with a stale generation exits
   audio: { view: 'spectrum', running: false, cw: null, sstv: null, picture: false },
   scanView: 'bars', rows: [], rowsF: null, wfHover: null, lut: null, replaying: false,
   seeking: false, seekDwelling: false, cycle: createCycleTracker(), lastId: null,
   captures: [], capturing: null, lastFix: null,
 };
 const board = createBoard();
+const pair = {};   // the bench pair's second fox; filled in below
 const seeker = createSeeker();
 state.lut = buildLut(settings.palette);
 const chart = { dirty: true };
@@ -76,7 +78,7 @@ const bandsText = bands => bands.map(([a, b]) => `${a}–${b}`).join(' and ') + 
 function applyModel() {
   const fox = state.fox, m = fox?.env, set = !!fox?.bandSet;
   const bands = allowedBands();
-  $('bandHint').textContent = !fox ? 'Tunable range appears once a fox is connected.' : !set ? 'Pick the SA868 fitted to this fox from the Module dropdown; the frequency range follows.' : `Tunable: ${bandsText(bands)}${settings.hamOnly ? ' (amateur allocations; widen in Settings)' : ' (the module\'s full range)'}.`;
+  $('bandHint').textContent = !fox ? 'Tunable range appears once a fox is connected.' : !set ? 'Pick the SA868 fitted to this fox from the Module dropdown; the frequency range follows.' : `Tunable: ${bandsText(bands)}${settings.hamOnly ? ' (amateur allocations; widen under Setup)' : ' (the module\'s full range)'}.`;
   $('bandSel').classList.toggle('needs-attention', !!fox && !set);
   if (fox) $('bandSel').value = set ? fox.state.band : 'auto';
   if (bands.length) { $('freq').min = bands[0][0]; $('freq').max = bands[bands.length - 1][1]; }
@@ -99,6 +101,7 @@ function applyModel() {
   if (fox) $('callsign').value = fox.state.callsign === 'N0CALL' ? '' : fox.state.callsign;
   $('tunedNow').textContent = set && Number.isFinite(fox.state.freq) ? fmtMHz(fox.state.freq) : '—';
   applyTx();
+  if (fox?.state.armed) startTxPoll(); else stopTxPoll();   // a reload while armed or beaconing: keep watching it
   setEnabled(!!fox);
   updateScanCount();
 }
@@ -109,12 +112,13 @@ function applyTx() {
   $('rxBadge').hidden = !fox || avail; $('rxBadge').textContent = 'RX only';
   if (!avail) { $('txBadge').hidden = true; return; }
   const armed = !!fox.state.armed, hasCall = cs && cs !== 'N0CALL';
-  $('txCallsign').textContent = hasCall ? cs : 'not set — store one in Fox configuration';
+  $('txCallsign').textContent = hasCall ? cs : 'not set — store one under Setup';
   $('txArm').checked = armed; $('txArm').disabled = !hasCall;
   $('txState').textContent = fox.state.keyed ? `keyed, ${fox.state.keyedLeft.toFixed(1)} s left` : armed ? 'armed' : 'disarmed';
   ['txPower', 'txWpm', 'keyBtn', 'toneBtn', 'morseText', 'morseBtn', 'foxMsg', 'foxDelay', 'foxBtn'].forEach(id => $(id).disabled = !armed);
-  $('txPower').value = fox.state.power; $('txWpm').value = fox.state.wpm;
-  if (!$('foxMsg').value) $('foxMsg').value = fox.state.foxmsg; $('foxDelay').value = fox.state.foxdelay;
+  const quiet = id => document.activeElement !== $(id);   // a field being typed in keeps what is typed
+  if (quiet('txPower')) $('txPower').value = fox.state.power; if (quiet('txWpm')) $('txWpm').value = fox.state.wpm;
+  if (!$('foxMsg').value) $('foxMsg').value = fox.state.foxmsg; if (quiet('foxDelay')) $('foxDelay').value = fox.state.foxdelay;
   if (!$('morseText').value && hasCall) $('morseText').value = `${cs} FOX`;
   state.foxRunning = fox.state.foxRunning; state.keyed = fox.state.keyed;
   const fb = $('foxBtn'); fb.textContent = state.foxRunning ? 'Stop beacon' : 'Start beacon'; fb.setAttribute('aria-pressed', String(state.foxRunning)); fb.classList.toggle('running', state.foxRunning);
@@ -143,7 +147,8 @@ function setEnabled(on) {
 
 // ---------------------------------------------------------------- connect
 async function connect(demo) {
-  if (state.fox) return;
+  if (state.fox || state.connecting) return;
+  state.connecting = true; $('connectBtn').disabled = true; $('demoBtn').disabled = true;
   const sel = $('bandSel').value;
   const link = demo ? new DemoLink({ band: sel === 'auto' ? 'dual' : sel, txEnabled: true, callsign: 'N0CALL' }) : new SerialLink();
   link.onTx = cmd => con.tx(cmd);
@@ -156,32 +161,38 @@ async function connect(demo) {
     await link.open();
     if (demo) con.dim('simulated fox ready (no hardware): foxes on 146.565 (keyed) and 433.900 (continuous)');
     await fox.identify();
-    state.fox = fox; state.demo = demo;
-    // the dropdown wins when it names a band and the fox disagrees (or has none)
-    if (sel !== 'auto' && sel !== fox.state.band) { con.dim(`setting the module band to ${sel} (kept on the board)`); await fox.band(sel); }
+    // the dropdown sets the band only on a fox that has none; a fox that already knows its module is believed
+    if (sel !== 'auto' && !fox.bandSet) { con.dim(`setting the module band to ${sel} (kept on the board)`); await fox.band(sel); }
+    else if (sel !== 'auto' && sel !== fox.state.band) con.dim(`this fox is stored as ${fox.state.band}; the dropdown now shows that. Change it there if the module really is ${sel}.`);
+    state.fox = fox; state.demo = demo; state.sqFeeder = null;
     applyModel(); updateHeading();
     setStatus(`${demo ? 'Simulated' : 'Connected'} · ${fox.ident.label}`, demo ? 'demo' : 'ok');
     if (!fox.bandSet) setStatus(`${demo ? 'Simulated' : 'Connected'} · band not set — pick the module ↑`, 'err');
     chart.dirty = true;
   } catch (e) {
     con.err('connect failed: ' + e.message); setStatus('Connection failed — ' + e.message, 'err');
+    state.fox = null; state.demo = false;
     try { await link.close(); } catch {}
-  }
+    applyModel();
+  } finally { state.connecting = false; $('connectBtn').disabled = !navigator.serial; $('demoBtn').disabled = false; }
 }
 async function disconnect(silent) {
   if (!state.fox) return;
   stopLive(); stopScanLoop(); stopTxPoll(); stopSeek();
   if (!silent && state.fox.state.txAvailable) { try { await state.fox.rx(); } catch {} }   // beacon off, unkeyed, before the port closes
-  const fox = state.fox; state.fox = null; state.demo = false;
+  const fox = state.fox; state.fox = null; state.demo = false; state.sqFeeder = null;
+  $('bandSel').value = 'auto';   // the next fox is read, not overwritten
   if (!silent) await fox.link.close(); else try { await fox.link.close(); } catch {}
   if (pair.fox && pair.demo) await pairDrop(false);   // a simulated beacon has no air to be heard on once its receiver is gone
   setStatus('Not connected', ''); applyModel(); chart.dirty = true;
 }
 $('connectBtn').addEventListener('click', () => state.fox ? disconnect() : connect(false));
+// a page closed or reloaded mid-TX: the firmware's own deadline unkeys within 60 s; this asks for receive right away where the browser still allows a write
+window.addEventListener('pagehide', () => { for (const f of [state.fox, pair.fox]) if (f?.state.txAvailable && (f.state.keyed || f.state.foxRunning)) { try { f.link.writeSync?.('rx\r\n'); } catch {} } });
 $('demoBtn').addEventListener('click', () => state.fox ? disconnect() : connect(true));
 $('bandSel').addEventListener('change', async () => {
   const v = $('bandSel').value; if (!state.fox || v === 'auto') return;
-  stopLive(); stopScanLoop();
+  stopLive(); stopScanLoop(); stopSeek(); state.cycle = createCycleTracker(); state.sqFeeder = null;
   try {
     await state.fox.band(v); con.dim(`module band set to ${v}`); setStatus(`${state.demo ? 'Simulated' : 'Connected'} · ${state.fox.ident.label}`, state.demo ? 'demo' : 'ok');
     // the other band's readings and channels no longer apply
@@ -204,6 +215,7 @@ function requestedFreq() {
 }
 async function tune() {
   const fox = state.fox; if (!fox || !fox.bandSet) return;
+  if (state.keyed || state.foxRunning) { con.err('tune: the transmitter is keyed; stop it first'); return; }
   try { const f = await fox.tune(requestedFreq()); $('freq').value = f.toFixed(4); $('tunedNow').textContent = fmtMHz(f); state.events.push({ t: Date.now(), label: fmtMHz(f) }); state.max = -1; $('rssiMax').textContent = '—'; state.cycle = board.get(f)?.cycle || createCycleTracker(); updateHunt(); chart.dirty = true; }
   catch (e) { con.err('tune: ' + e.message); }
 }
@@ -215,7 +227,7 @@ $('volSel').addEventListener('change', async () => { try { await state.fox?.volu
 
 function takeSample(t, rssi, f) {
   state.samples.push({ t, rssi, f }); if (state.samples.length > 20000) state.samples.shift(); chart.huntDirty = true;
-  if (f != null) { state.cycle.feed(t, rssi); board.note(f, t, rssi); }
+  if (f != null) { if (board.get(f)?.cycle !== state.cycle) state.cycle.feed(t, rssi); board.note(f, t, rssi); }   // a pinned channel's tracker is fed by the board
   if (state.capturing && rssi >= 0) { const h = compass.at(t); if (Number.isFinite(h)) { state.capturing.add(h, rssi); state.liveBearing = { h, r: rssi }; } }
   if (rssi > state.max) state.max = rssi;
   $('rssiNow').textContent = rssi >= 0 ? String(rssi) : 'no reply'; $('rssiNow').classList.toggle('dim', rssi < 0);
@@ -248,21 +260,22 @@ async function pollEvents() {
   showSq();
 }
 async function liveLoop() {
+  const gen = ++state.gen.live;
   for (const id of ['liveBtn', 'hLiveBtn']) { const b = $(id); b.textContent = 'Stop receiver'; b.classList.add('running'); b.setAttribute('aria-pressed', 'true'); }
-  let got = 0, since = performance.now();
-  while (state.live && state.fox) {
-    if (state.scanning || state.keyed || state.foxRunning) { await new Promise(r => setTimeout(r, 100)); continue; }   // a scan has the receiver retuning; TX has it keyed
+  let got = 0, since = performance.now(), failures = 0;
+  while (state.live && state.fox && state.gen.live === gen) {
+    if (state.scanning || state.keyed || state.foxRunning) { if (state.foxRunning) $('hStatus').textContent = 'receiver paused: this fox is running as a beacon (stop it in Transmit)'; await new Promise(r => setTimeout(r, 100)); continue; }   // a scan has the receiver retuning; TX has it keyed
     try {
       const burst = await state.fox.rssiBurst(state.capturing ? 3 : BURST);   // short bursts while a bearing is being captured: the antenna is moving
       for (let i = 0; i < burst.n; i++) takeSample(burst.t0 + burst.ms[i], burst.rssi[i], burst.f);
       recorder.addBurst(burst, stampFor());
       if (state.fox.state.sqWire) await pollEvents();
-      got += burst.n; const dt = (performance.now() - since) / 1000; if (dt > 2) { state.rate = got / dt; $('rateNow').textContent = state.rate.toFixed(1) + ' / s'; got = 0; since = performance.now(); }
-    } catch (e) { con.err('rssi: ' + e.message); await new Promise(r => setTimeout(r, 500)); }
+      got += burst.n; failures = 0; const dt = (performance.now() - since) / 1000; if (dt > 2) { state.rate = got / dt; $('rateNow').textContent = state.rate.toFixed(1) + ' / s'; got = 0; since = performance.now(); }
+    } catch (e) { con.err('rssi: ' + e.message); if (++failures >= 5) { con.err('receiver stopped: five errors in a row (is the fox still there?)'); break; } await new Promise(r => setTimeout(r, 500)); }
   }
-  stopLive();
+  if (state.gen.live === gen) stopLive();
 }
-function stopLive() { state.live = false; for (const id of ['liveBtn', 'hLiveBtn']) { const b = $(id); b.textContent = 'Start receiver'; b.classList.remove('running'); b.setAttribute('aria-pressed', 'false'); } $('rateNow').textContent = '—'; }
+function stopLive() { state.live = false; state.gen.live++; for (const id of ['liveBtn', 'hLiveBtn']) { const b = $(id); b.textContent = 'Start receiver'; b.classList.remove('running'); b.setAttribute('aria-pressed', 'false'); } $('rateNow').textContent = '—'; }
 function startLive() { if (!state.fox?.bandSet || state.live) return; if (state.replaying) exitReplay(); stopSeek(); state.live = true; $('hStatus').textContent = `receiver running on ${fmtMHz(state.fox.state.freq)} · the countdown appears after two bursts`; liveLoop(); }
 $('liveBtn').addEventListener('click', () => { if (state.live) { stopLive(); state.fox?.cancel(); } else startLive(); });
 $('hLiveBtn').addEventListener('click', () => { if (state.live) { stopLive(); state.fox?.cancel(); } else startLive(); });
@@ -285,6 +298,7 @@ function updateScanCount() {
 ['scanStart', 'scanStop', 'scanStep'].forEach(id => $(id).addEventListener('input', updateScanCount));
 async function doScan() {
   const fox = state.fox; if (!fox || !fox.bandSet || state.scanning) return;
+  if (state.keyed || state.foxRunning) { con.err('scan: the transmitter is keyed; stop it first'); return; }
   if (state.replaying) exitReplay(); if (state.seeking) stopSeek();
   const { start, stop, stepKHz } = scanParams();
   state.scanning = true; $('scanBtn').disabled = true; $('scanBtn').textContent = 'Scanning…'; $('scanBtn').classList.add('busy');
@@ -304,18 +318,19 @@ function acceptScan(s) {
   $('scanPeak').textContent = p >= 0 ? `${fmtMHz(s.f[p])} · ${s.rssi[p]}` : '—';
   $('scanTime').textContent = `${s.ms ? (s.ms / 1000).toFixed(1) + ' s · ' : ''}${s.n} ch`;
   $('scanHead').textContent = `${s.n} channels, ${s.start.toFixed(4)}–${s.stop.toFixed(4)} MHz, step ${s.stepKHz} kHz${state.scanView === 'waterfall' ? ` · ${state.rows.length} scan${state.rows.length === 1 ? '' : 's'}` : ''}`;
-  ['tunePeakBtn', 'pngScanBtn', 'scanCsvBtn'].forEach(id => $(id).disabled = false);
+  ['tunePeakBtn', 'pinPeakBtn', 'pngScanBtn', 'scanCsvBtn'].forEach(id => $(id).disabled = false);
   chart.dirty = true;
 }
 function setScanView(v) { state.scanView = v; document.querySelectorAll('[data-scan-view]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.scanView === v))); $('scanCanvas').style.cursor = v === 'bars' ? 'pointer' : 'crosshair'; if (state.scan) acceptScanHead(); chart.dirty = true; }
 function acceptScanHead() { const s = state.scan; $('scanHead').textContent = `${s.n} channels, ${s.start.toFixed(4)}–${s.stop.toFixed(4)} MHz, step ${s.stepKHz} kHz${state.scanView === 'waterfall' ? ` · ${state.rows.length} scan${state.rows.length === 1 ? '' : 's'}` : ''}`; }
 document.querySelectorAll('[data-scan-view]').forEach(b => b.addEventListener('click', () => setScanView(b.dataset.scanView)));
 async function scanLoop() {
+  const gen = ++state.gen.scan;
   const b = $('scanLoopBtn'); b.textContent = 'Stop scanning'; b.classList.add('running'); b.setAttribute('aria-pressed', 'true'); $('scanBtn').disabled = true;
-  while (state.scanLoop && state.fox) { await doScan(); await new Promise(r => setTimeout(r, 200)); }
-  stopScanLoop();
+  while (state.scanLoop && state.fox && state.gen.scan === gen) { await doScan(); await new Promise(r => setTimeout(r, 200)); }
+  if (state.gen.scan === gen) stopScanLoop();
 }
-function stopScanLoop() { state.scanLoop = false; const b = $('scanLoopBtn'); b.textContent = 'Scan continuously'; b.classList.remove('running'); b.setAttribute('aria-pressed', 'false'); $('scanBtn').disabled = !state.fox?.bandSet; }
+function stopScanLoop() { state.scanLoop = false; state.gen.scan++; const b = $('scanLoopBtn'); b.textContent = 'Scan continuously'; b.classList.remove('running'); b.setAttribute('aria-pressed', 'false'); $('scanBtn').disabled = !state.fox?.bandSet; }
 $('scanBtn').addEventListener('click', doScan);
 $('scanLoopBtn').addEventListener('click', () => { if (state.scanLoop) { stopScanLoop(); state.fox?.cancel(); } else if (state.fox?.bandSet) { state.scanLoop = true; scanLoop(); } });
 $('tunePeakBtn').addEventListener('click', () => { const s = state.scan; if (!s) return; const p = peakIndex(s.rssi); if (p >= 0) { $('freq').value = s.f[p].toFixed(4); tune(); } });
@@ -343,11 +358,11 @@ seekPin.addEventListener('change', () => { settings.seekPin = seekPin.checked; s
 function seekChannels() { const { start, stop, stepKHz, count } = scanParams(); if (!count || count > 128) return []; const ch = []; for (let i = 0; i < count; i++) ch.push(+(start + i * stepKHz / 1000).toFixed(4)); return ch; }
 function seekStatus(t) { $('seekStatus').textContent = t; if (state.seeking) $('hStatus').textContent = t; }
 async function seekLoop() {
-  const fox = state.fox;
+  const fox = state.fox, gen = ++state.gen.seek;
   for (const id of ['seekBtn', 'hSeekBtn']) { const b = $(id); b.textContent = 'Stop seek'; b.classList.add('running'); b.setAttribute('aria-pressed', 'true'); }
   ['seekSkipBtn', 'seekLockBtn', 'hSkipBtn', 'hLockBtn'].forEach(id => $(id).disabled = false);
-  let tuned = null;
-  while (state.seeking && state.fox) {
+  let tuned = null, failures = 0;
+  while (state.seeking && state.fox === fox && state.gen.seek === gen) {
     try {
       const f = seeker.channel(); if (f == null) { seekStatus('no channels: set a scan range first'); break; }
       if (f !== tuned) { await fox.tune(f); tuned = f; $('freq').value = f.toFixed(4); $('tunedNow').textContent = fmtMHz(f); state.cycle = board.get(f)?.cycle || createCycleTracker(); if (!state.seekDwelling) state.events.push({ t: Date.now(), label: fmtMHz(f) }); }
@@ -368,12 +383,13 @@ async function seekLoop() {
       } else if (state.seekDwelling) {
         const st = state.cycle.status(); seekStatus(`on ${f.toFixed(4)} MHz · ${Math.round(last.over)} over floor${seeker.locked != null ? ' · locked' : ''}${st.cycles >= 2 ? ` · cycle ${(st.periodMs / 1000).toFixed(0)} s` : ''}`);
       }
-      updateHunt();
-    } catch (e) { con.err('seek: ' + e.message); await new Promise(r => setTimeout(r, 500)); }
+      updateHunt(); failures = 0;
+    } catch (e) { con.err('seek: ' + e.message); if (++failures >= 5) { con.err('seek stopped: five errors in a row'); break; } await new Promise(r => setTimeout(r, 500)); }
   }
-  stopSeek();
+  if (state.gen.seek === gen) stopSeek();
 }
 function stopSeek() {
+  state.gen.seek++;
   if (!state.seeking && !$('seekBtn').classList.contains('running')) return;
   state.seeking = false; state.seekDwelling = false; seeker.unlock();
   for (const id of ['seekBtn', 'hSeekBtn']) { const b = $(id); b.textContent = 'Seek'; b.classList.remove('running'); b.setAttribute('aria-pressed', 'false'); }
@@ -383,7 +399,7 @@ function stopSeek() {
 function startSeek() {
   if (!state.fox?.bandSet || state.seeking) return;
   if (state.replaying) exitReplay(); stopLive(); stopScanLoop();
-  const ch = seekChannels(); if (!ch.length) { con.err('seek: set a scan range of up to 128 channels first'); return; }
+  const ch = seekChannels(); if (!ch.length) { const { count } = scanParams(); con.err(count > 128 ? `seek: the scan range is ${count} channels; seek takes up to 128 (widen the step or narrow the range)` : 'seek: set a scan range first'); return; }
   seeker.setChannels(ch); seeker.margin = settings.seekMargin; seeker.dwellMs = settings.seekDwell * 1000;
   state.seeking = true; state.seekDwelling = false; seekLoop();
 }
@@ -426,7 +442,9 @@ function updateHunt() {
   $('hCycle').textContent = st.cycles >= 2 ? `on ${(st.onMs / 1000).toFixed(0)} s every ${(st.periodMs / 1000).toFixed(0)} s · from ${st.cycles} bursts${st.cycles < 4 ? ' (settling)' : st.spread > 0.4 ? ' (irregular)' : ''}${st.hardware ? ' · SQ wire' : ''}` : st.cycles === 1 ? 'one burst heard; the period needs a second' : 'listen on a channel to learn the fox\'s cycle';
   $('cycleNow').textContent = st.cycles >= 2 ? `${(st.onMs / 1000).toFixed(0)} s on / ${(st.periodMs / 1000).toFixed(0)} s · ${st.cycles} bursts` : st.cycles === 1 ? '1 burst' : '—';
   $('cycleNext').textContent = cd;
-  $('hAtten').value = String([0, 3, 6, 10, 20, 30, 40].includes(settings.attenDb) ? settings.attenDb : 0);
+  { const sel = $('hAtten'), v = String(settings.attenDb); let o = [...sel.options].find(x => x.value === v);
+    if (!o) { o = sel.querySelector('option[data-custom]') || sel.appendChild(Object.assign(document.createElement('option'), { dataset: { custom: '1' } })); o.dataset.custom = '1'; o.value = v; o.textContent = `${v} dB (custom)`; }
+    sel.value = v; }
   if (settings.mode === 'hunt' && (chart.huntDirty || live)) { chart.huntDirty = false; const a = fit($('huntCanvas')); if (a) renderRssi(a.ctx, a.W, a.H, state.samples, { windowS: Math.min(settings.windowS, 120), range: rssiRange(), maxHold: state.max >= 0 ? state.max : null, freq: state.fox?.state.freq, events: state.events, lut: settings.heatStrip ? state.lut : null, attenDb: settings.attenDb }); }
 }
 // the half-second tick only does work while something is happening; an idle page on a phone stays idle
@@ -592,16 +610,16 @@ const keyBtn = $('keyBtn');
 let keyHeld = false;
 keyBtn.addEventListener('pointerdown', async e => {
   if (keyBtn.disabled) return; keyBtn.setPointerCapture(e.pointerId); keyHeld = true;
-  stopLive(); stopScanLoop();
+  stopLive(); stopScanLoop(); stopSeek();
   try { const left = await state.fox.keyOn(10); keyBtn.setAttribute('aria-pressed', 'true'); keyBtn.textContent = 'KEYED — release to stop'; state.keyed = true; $('txBadge').hidden = false; $('keyTimer').textContent = `${left.toFixed(0)} s max`; }
   catch (err) { txErr(err); keyHeld = false; }
 });
 const keyRelease = async () => { if (!keyHeld) return; keyHeld = false; try { await state.fox.keyOff(); } catch (err) { txErr(err); } keyBtn.setAttribute('aria-pressed', 'false'); keyBtn.textContent = 'Hold to key'; state.keyed = false; $('keyTimer').textContent = ''; applyTx(); };
 keyBtn.addEventListener('pointerup', keyRelease); keyBtn.addEventListener('pointercancel', keyRelease); keyBtn.addEventListener('lostpointercapture', keyRelease);
-$('toneBtn').addEventListener('click', async () => { stopLive(); try { $('toneBtn').disabled = true; txNote(await state.fox.tone(800, 500)); } catch (e) { txErr(e); } finally { $('toneBtn').disabled = !state.fox?.state.armed; } });
+$('toneBtn').addEventListener('click', async () => { stopLive(); stopSeek(); state.fox?.cancel(); try { $('toneBtn').disabled = true; txNote(await state.fox.tone(800, 500)); } catch (e) { txErr(e); } finally { $('toneBtn').disabled = !state.fox?.state.armed; } });
 $('morseBtn').addEventListener('click', async () => {
   const fox = state.fox, text = $('morseText').value.trim(); if (!fox || !text) return;
-  stopLive(); stopScanLoop();
+  stopLive(); stopScanLoop(); stopSeek();
   $('morseBtn').disabled = true; $('morseBtn').textContent = 'On the air…'; state.keyed = true; $('txBadge').hidden = false;
   try { const r = await fox.morse(text); txNote(`${r.result}: "${text.toUpperCase()}", ${r.seconds.toFixed(1)} s`); }
   catch (e) { txErr(e); }
@@ -612,12 +630,11 @@ $('foxBtn').addEventListener('click', async () => {
   try {
     if (state.foxRunning) { const n = await fox.foxStop(); txNote(`beacon stopped after ${n} cycle${n === 1 ? '' : 's'}`); }
     else {
-      stopLive(); stopScanLoop();
+      stopLive(); stopScanLoop(); stopSeek();
       await fox.foxmsg($('foxMsg').value); await fox.foxdelay(parseInt($('foxDelay').value, 10)); await fox.wpm(parseInt($('txWpm').value, 10));
       await fox.foxStart(); txNote(`beacon running: "${fox.state.callsign} ${fox.state.foxmsg}" every ${fox.state.foxdelay} s`); startTxPoll();
     }
   } catch (e) { txErr(e); }
-  try { await fox.info(); } catch {}
   applyTx();
 });
 /** While armed, read `tx` and `fox` once a second so auto-unkey and beacon cycles show on the page. */
@@ -627,7 +644,7 @@ function stopTxPoll() { if (state.txPoll) { clearInterval(state.txPoll); state.t
 // ---------------------------------------------------------------- bench pair
 // A second fox, on its own port, as the beacon. Its commands go through the
 // same Fox class and the same gates; the console shows them prefixed [B].
-const pair = { fox: null, demo: false, timer: null };
+Object.assign(pair, { fox: null, demo: false, timer: null });
 const pairNote = t => { $('pairNote').textContent = t; $('pairNote').classList.remove('err'); };
 const pairErr = e => { $('pairNote').textContent = e.message || String(e); $('pairNote').classList.add('err'); con.err('[B] ' + (e.message || e)); };
 function showPair() {
@@ -642,7 +659,8 @@ function showPair() {
   $('pairCallsign').value = b.state.callsign === 'N0CALL' ? '' : b.state.callsign;
   $('pairArm').checked = b.state.armed; $('pairArm').disabled = !b.state.txAvailable || b.state.callsign === 'N0CALL';
   if (!$('pairFreqIn').value && Number.isFinite(b.state.freq)) $('pairFreqIn').value = b.state.freq.toFixed(4);
-  $('pairMsg').value = b.state.foxmsg || 'FOX'; $('pairDelay').value = b.state.foxdelay || 30;
+  if (document.activeElement !== $('pairMsg') && !$('pairMsg').value) $('pairMsg').value = b.state.foxmsg || 'FOX';
+  if (document.activeElement !== $('pairDelay')) $('pairDelay').value = b.state.foxdelay || 30;
   const live = b.state.txAvailable && b.state.armed;
   ['pairFoxBtn', 'pairKeyBtn', 'pairToneBtn'].forEach(id => $(id).disabled = !live);
   $('pairFoxBtn').textContent = b.state.foxRunning ? 'Stop beacon' : 'Start beacon'; $('pairFoxBtn').setAttribute('aria-pressed', String(b.state.foxRunning)); $('pairFoxBtn').classList.toggle('running', b.state.foxRunning);
@@ -781,7 +799,7 @@ $('fwInstallBtn').addEventListener('click', async () => {
   try {
     if (wasDemo) throw new Error('the simulated fox has nothing to install onto; connect a real fox first (or leave it disconnected and Install opens the port chooser)');
     if (!link) { link = new SerialLink(); link.onRaw = b => { if (settings.rawBytes) con.dim('rx ' + b.length + ' B: ' + JSON.stringify(new TextDecoder().decode(b)).slice(0, 200)); }; await link.open(); opened = true; con.dim('installer: port opened'); }
-    else con.dim('installer: using the open connection');
+    else { con.dim('installer: using the open connection'); if (state.fox) await state.fox.cancel(); await link._queue; }   // nothing of ours still waiting on the wire
     fwNote('installing…');
     const r = await installCodePy(link, text, { onProgress: prog });
     con.dim(`installer: ${r.version || 'rebooted'}`);
@@ -800,8 +818,10 @@ $('fwInstallBtn').addEventListener('click', async () => {
     chart.dirty = true;
   } catch (e) {
     fwNote('install failed: ' + e.message, true); con.err('installer: ' + e.message);
+    // the board may be sitting in the raw REPL: leave it (Ctrl+B) and reboot (Ctrl+D) so whatever code.py is there runs
+    try { await link._write('\x02'); await new Promise(r => setTimeout(r, 150)); await link._write('\x04'); await new Promise(r => setTimeout(r, 2500)); link._take(); } catch {}
     if (opened) { try { await link.close(); } catch {} }
-    else if (state.fox) { try { await state.fox.identify(); } catch {} }         // whatever is on the board now, reflect it
+    else if (state.fox) { try { await state.fox.identify(); applyModel(); } catch (e2) { con.err('the fox did not come back after the failed install: ' + e2.message); await disconnect(true); } }
   } finally { btn.disabled = false; setTimeout(() => { $('fwProgress').hidden = true; }, 1500); }
 });
 
@@ -809,7 +829,7 @@ $('fwInstallBtn').addEventListener('click', async () => {
 async function sendManual(cmd) {
   if (!state.fox) { con.err('not connected'); return; }
   if (/\x03/.test(cmd)) { con.err('Ctrl+C is never sent: it would drop the fox to the REPL'); return; }
-  try { await state.fox.raw(cmd); if (/^(band|callsign|tune|bw|squelch|volume|tx|fox|power|wpm|foxmsg|foxdelay|rx)\b/i.test(cmd)) { await state.fox.info(); applyModel(); } } catch (e) { con.err(e.message); }
+  try { await state.fox.raw(cmd); if (/^(band|callsign|tune|bw|squelch|volume|tx|fox|power|wpm|foxmsg|foxdelay|rx|sq)\b/i.test(cmd)) { await state.fox.info(); applyModel(); } } catch (e) { con.err(e.message); }
 }
 
 // ---------------------------------------------------------------- drawing

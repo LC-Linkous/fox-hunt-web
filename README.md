@@ -79,7 +79,14 @@ ESP32 passes commands and answers between USB and the module's UART.
   firmware involved. The firmware's `volume` setting is that pad's level.
   See [Audio](#audio).
 
-## What it does (v0.8)
+## What it does (v0.9)
+
+The sidebar is seven sections, in the order a hunt uses them: **Receiver**,
+**Scan & seek**, **Hunt** (bearing and the hunt board), **Audio**, **Session**
+(recording, location, replay, pictures and CSV), **Transmit** (this fox, and a
+second fox as the beacon) and **Setup** (this fox's stored settings, this
+page's settings). Hunt mode replaces all of it with one column.
+
 
 - **Connect / detect** — reads `version` and `info`, refuses a port that is not
   a fox running this firmware, shows the module's own version string and
@@ -141,10 +148,10 @@ ESP32 passes commands and answers between USB and the module's UART.
 - **Location** — off by default. When on, a GPS badge shows, the fix's
   accuracy and age are displayed, a fix older than 15 s is not used, and
   lat/lon/accuracy stamp every reading and scan.
-- **Export** — PNG of either plot, CSV of the scan on screen.
-- **Fox configuration** — firmware and module versions, which RSSI command the
-  module speaks, whether NVM is present, and the callsign (stored, unused by
-  this build).
+- **Pictures and CSV** (under Session) — PNG of either plot, CSV of the scan on screen.
+- **Setup** — firmware and module versions, which RSSI command the module
+  speaks, whether NVM is present, the callsign and the SQ wire (all kept on
+  the board); then the page's own settings.
 - **Console** — the raw serial exchange, resizable drawer, command history,
   log download (commands only, or commands + replies, timestamped). The `at`
   command passes a line straight to the SA868 so you can watch the module
@@ -174,8 +181,8 @@ ESP32 passes commands and answers between USB and the module's UART.
 - **About** (`about.html`) — what works on which device, what the firmware
   can and can't do, what the page keeps and asks for, running it locally.
 
-See `ROADMAP.md` for what comes next: the bench pair, the SQ wire, SSTV
-transmit.
+See `ROADMAP.md` for what comes next: SSTV transmit, and what hardware
+testing turns up.
 
 ## Hardware
 
@@ -220,7 +227,7 @@ routed either. A wire from that pad to the XIAO's `D2` lets the firmware
 (0.4.0+) time every carrier edge itself; the page then polls `events`
 once a second while the receiver runs and the *Next burst* countdown comes
 from hardware-timed onsets instead of RSSI threshold crossings. Tick
-**SQ wire soldered to D2** in the Fox configuration section once, it is
+**SQ wire soldered to D2** under Setup once, it is
 kept on the board, and the carrier light next to it follows the pin.
 Leave it unticked on a fox without the wire: D2 is never read then. The
 fox's `squelch` setting decides what counts as a carrier.
@@ -327,11 +334,12 @@ simulated fox and session replay. The About page has the full table.
 
 ## Transmit
 
-Off by default, on purpose. To turn it on, open `firmware/code.py`, change
-`TX_ENABLED = False` to `True`, and save it to the board again. Then, in
-this order:
+Off by default, on purpose. To turn it on, install the firmware again from
+the Firmware section with *Transmit commands* ticked (or, by hand, change
+`TX_ENABLED = False` to `True` at the top of `firmware/code.py` and save it
+to the board). Then, in this order:
 
-1. Store your callsign (Fox configuration section). The firmware refuses to
+1. Store your callsign (Setup section). The firmware refuses to
    arm while it is `N0CALL`, and every beacon cycle sends it first.
 2. Tick the arming box in the Transmit section. That sends `tx arm`; it
    lasts until you disconnect or the board reboots.

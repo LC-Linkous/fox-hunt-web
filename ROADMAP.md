@@ -78,6 +78,25 @@ The simulated fox and session replay work everywhere.
 - Firmware `rssi stream` (unprompted, cancel on any byte) if the polled
   rate turns out to limit anything.
 
+## v0.9 — audit and simulated hardware — shipped
+
+- Firmware simulator (real `code.py`, fake CircuitPython + SA868), page
+  tests in headless Chromium, ShellLink framing tests; the three criticals
+  and the state races they found, fixed. Pins page. Sidebar regrouped.
+
+## Hardware test checklist (needs a real fox)
+
+- RX build: `version`/`info` on first connect (banner handling), `rssi 10`
+  gives 10 lines, `scan` restores the tuned frequency, the installer round
+  trip from the page.
+- SQ wire: `sq on`, light follows a keyed handheld, `events` edges, the
+  pin's polarity (expected low = carrier).
+- TX build: `tone 800 500` level into the SA868 MIC (PWM square wave may
+  need the dc34fox divider), `morse` timing by ear, beacon keeps answering
+  `info` during a cycle, `fox stop` mid-cycle, the 60 s cap, H/L polarity
+  with a power meter (the two NiceRF documents disagree).
+- Android: Web Serial over OTG, compass source, scroll.
+
 ## Later / maybe
 
 - Noise-quieting strength metric from audio (works where RSSI saturates).

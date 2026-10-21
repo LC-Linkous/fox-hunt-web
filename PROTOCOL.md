@@ -133,11 +133,14 @@ them. First line `now {ticks_ms} carrier|quiet` gives the fox's own
 millisecond tick and the live level; each following line is
 `{ticks_ms} 1|0` (1 = carrier began, 0 = carrier ended). The fox keeps
 the last 64 edges; poll at least once a minute during a busy hunt. Ticks
-are the fox's `time.monotonic()` in ms and have nothing to do with wall
-time; the host subtracts the `now` line from its own clock. Refused with
-`error:` while `sq` is off. Edges are sampled in the main loop (about every
-few ms), so squelch flutter at a burst's edges appears as short pairs the
-host should merge.
+are the fox's milliseconds since boot (`supervisor.ticks_ms()`, corrected
+so they never wrap) and have nothing to do with wall time; the host
+subtracts the `now` line from its own clock. Refused with `error:` while
+`sq` is off. The pin is sampled every few ms everywhere the firmware waits
+— the main loop, inside an `rssi N` burst, a scan, a Morse cycle — so an
+edge is stamped when it happened, not when the current command finished.
+Squelch flutter at a burst's edges appears as short pairs the host should
+merge.
 
 ## Transmit
 
@@ -156,11 +159,16 @@ On top of that every key-down has a deadline (`tx on` default 10 s, cap
 main loop unkeys at the deadline regardless of what the host does. The
 page never relies on itself to unkey.
 
-Replies during a transmission: `morse`, `tone` and `fox` cycles are
-blocking; the reply arrives when the air time is over. The page sets its
-timeout from the text length and WPM. A byte arriving during `morse` or a
-beacon cycle aborts it at the next character (the reply is `aborted`), and
-the byte is then read as the next command, so `fox stop` works mid-cycle.
+Replies during a transmission: `morse` and `tone` are blocking; the reply
+arrives when the air time is over, and the page sets its timeout from the
+text length and WPM. A byte arriving during `morse` aborts it at the next
+element (the reply is `aborted`), so a human at a terminal can stop it with
+Enter; the page never sends anything while one of its own commands is
+pending. A beacon (`fox start`) cycle is different: its Morse is stepped
+from the main loop, so the shell keeps answering `info`, `tx`, `fox`, `rssi`
+and the rest while a cycle is on the air (the page polls `tx` and `fox` once
+a second), and `fox stop`, `tx off`, `tx disarm` or `rx` end the cycle at
+the next element.
 
 ### `tx`
 `disabled`, `off`, `armed`, or `on 4.2` (seconds left on the current key-down).

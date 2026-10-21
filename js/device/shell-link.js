@@ -72,7 +72,9 @@ export class ShellLink {
     for (;;) {
       let text = this._text(this.buf);
       if (!echoSeen) {
-        const at = text.indexOf(cmd);
+        // the echo is the command on a line of its own; a bare indexOf would accept "sq" inside a stale "squelch: 3"
+        const m = new RegExp('(^|\\n)' + cmd.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\r?\\n').exec(text);
+        const at = m ? m.index + m[1].length : -1;
         if (at === -1) {
           if (text.replace(/[\s\0]+$/, '').endsWith(PROMPT)) { this._take(); if (this.onRx && !quiet) this.onRx(`(discarded ${text.length} stale bytes)`, { ms: 0, raw: text }); }
         } else {

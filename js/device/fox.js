@@ -100,7 +100,15 @@ export class Fox {
     try { v = await this.link.command('version', { timeoutMs: 2500 }); }
     catch { await sleep(1200); v = await this.link.command('version', { timeoutMs: 3000 }); }
     if (!v.raw.includes(PROMPT)) throw new Error('that port did not answer with a ch> prompt');
-    const id = identifyDevice(v.body);
+    // the boot banner (chip reset on port open) prints the same version line before its own prompt, possibly
+    // ahead of our echo: take the version line wherever it is in what came back, not the first line
+    let id = identifyDevice(v.body);
+    if (!id.ok) { const m = /^(fox\w+ \d+\.\d+\.\d+ [^\r\n]+)/m.exec(v.raw); if (m) id = identifyDevice(m[1]); }
+    if (!id.ok) {   // a banner-only reply: the command itself may not have been read yet; ask once more
+      await sleep(800); const again = await this.link.command('version', { timeoutMs: 3000 });
+      id = identifyDevice(again.body); if (!id.ok) { const m = /^(fox\w+ \d+\.\d+\.\d+ [^\r\n]+)/m.exec(again.raw); if (m) id = identifyDevice(m[1]); }
+      if (id.ok) v = again;
+    }
     if (!id.ok) throw new Error(id.reason);
     this.ident = { version: v.body.trim(), info: '', firmware: id.firmware, build: id.build, board: id.board, module: id.module, band: id.band, label: '' };
     const kv = await this.info();
@@ -279,7 +287,7 @@ export class Fox {
     if (/^error:/.test(r.body.trim())) this._blocked('events', r.body.trim().replace(/^error:\s*/, ''));
     const lines = r.body.trim().split(/\r?\n/).filter(Boolean);
     const head = /^now (\d+) (carrier|quiet)/.exec(lines[0] || '');
-    if (!head) throw new DeviceError(`events: unexpected reply ${JSON.stringify(lines[0] || '')}`, r.body);
+    if (!head) throw new DeviceError(`events: unexpected reply ${JSON.stringify(lines[0] || '')}`, STATUS.REFUSED);
     const edges = lines.slice(1).map(l => { const m = /^(\d+) ([01])$/.exec(l.trim()); return m ? { ms: +m[1], on: m[2] === '1' } : null; }).filter(Boolean);
     this.state.sqWire = true; this.state.sqCarrier = head[2] === 'carrier';
     return { now: +head[1], carrier: head[2] === 'carrier', edges };

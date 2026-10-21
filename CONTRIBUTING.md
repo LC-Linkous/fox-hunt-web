@@ -47,13 +47,31 @@ tinysa-web's by the USB filter only.
 
 ## Running the tests
 
+Three layers, none of which needs a fox:
+
 ```
-node --test 'tests/**/*.test.mjs'
+node --test tests/*.test.mjs                 # device layer and pure logic, against the simulated fox
+cd tests/firmware && python3 -m unittest -v  # the real firmware/code.py on simulated CircuitPython + SA868
+node --test tests/page/page.test.mjs         # the page in headless Chromium (npm i playwright; npx playwright install chromium)
 ```
 
-They drive `Fox` over the simulated fox, so a changed reply shape or a
-command the page sends that the firmware no longer has fails here before it
-fails on a hunt. Add a test for every new command.
+The device tests drive `Fox` over the simulated fox's byte stream, so a
+changed reply shape or a command the page sends that the firmware no longer
+has fails here. The firmware tests execute `firmware/code.py` unmodified
+with `board`, `busio`, `digitalio`, `pwmio`, `supervisor`, `microcontroller`,
+`time` and `sys` replaced by `tests/firmware/sim.py`: a virtual clock, a
+fake SA868 that answers the AT commands and models what is on the air, pins
+the test can read or drive (including refusing to claim a pin twice, as
+CircuitPython does), an NVM that survives a simulated reboot, and a console.
+Add a firmware test for every new command and a page test for every new
+control. The page tests skip when Playwright is missing locally and fail in
+CI (`REQUIRE_BROWSER=1`).
+
+The three shared-kit files carry one small addition over tinysa-web's copy
+until it is ported there: `<html data-app="…">` scopes the sidebar/console
+localStorage keys and the console download name per tool (`sidebar.js`
+exports `APP`), and `shell-link.js` matches a command's echo as a whole line
+rather than a substring.
 
 ## Licenses
 
