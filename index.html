@@ -147,6 +147,7 @@
     <section data-section="audio">
       <h2><button type="button" aria-expanded="false">Audio</button></h2>
       <div class="body">
+        <p class="hint" id="audioSource" style="margin:0 0 6px"></p>
         <p class="hint" style="margin:0 0 8px">The SA868's AF_OUT pad → a USB sound card → this page. Decodes a fox's Morse ID and SSTV pictures in the browser; the fox firmware is not involved.</p>
         <div class="field"><label for="audioDev">Input</label><div class="row"><select id="audioDev" style="width:100%"><option value="">Default input</option></select><button class="btn small" id="audioRefresh" title="Re-list inputs (labels appear after the first permission)">↻</button></div></div>
         <div class="stack"><button class="btn primary block" id="audioBtn" aria-pressed="false">Start audio</button></div>
@@ -232,6 +233,7 @@
           <div class="field"><label for="foxDelay">Seconds between cycles</label><input type="number" id="foxDelay" value="30" min="5" max="600" step="5" style="width:100%" disabled></div>
           <div class="stack"><button class="btn primary block" id="foxBtn" disabled aria-pressed="false">Start beacon</button></div>
           <dl class="kv"><dt>Beacon</dt><dd id="foxStatusLine">stopped</dd></dl>
+          <div id="sstvTxBlock">
           <span class="label group">Send a picture (SSTV)</span>
           <p class="hint" style="margin:0 0 6px">This page plays the SSTV tones out of a sound card wired to the SA868's <code>MIC_IN</code> pad (pin 18); the fox is told <code>mic line</code> so its own tone pin floats, then keyed for the frame. Firmware 0.5.0+. <em>Preview tones</em> plays without keying, for checking the wiring or feeding the decoder.</p>
           <div class="field"><label for="sstvFile">Picture</label><input type="file" id="sstvFile" accept="image/*" disabled></div>
@@ -247,6 +249,8 @@
           </div>
           <div class="fw-progress" id="sstvTxProgress" hidden><div class="bar"><div class="fill" id="sstvTxFill"></div></div></div>
           <p class="hint" id="sstvTxNote"></p>
+          </div>
+          <p class="hint" id="sstvTxOff" hidden>SSTV transmit needs a sound card wired to MIC_IN: tick it under Setup → Wires on this fox once it is.</p>
         </div>
         <p class="hint" id="txStatus"></p>
         <span class="label group" style="margin-top:14px">A second fox as the beacon</span>
@@ -286,9 +290,9 @@
           <h2>Event channels</h2>
           <p class="hint">The frequencies the foxes use at this event. They become the Receiver presets, the scan presets, the autoseek list and a one-click set of hunt-board pins. Edit any time; a hunt rarely knows them all beforehand.</p>
           <table class="markers chans" id="chanTable"><thead><tr><th>Label</th><th>MHz</th><th></th></tr></thead><tbody id="chanBody"></tbody></table>
-          <div class="row" style="margin-top:6px"><input type="text" id="chanLabel" placeholder="Fox 1" maxlength="24" style="width:40%"><input type="number" id="chanFreq" step="0.0125" placeholder="146.5650" style="width:40%"><button class="btn small" id="chanAddBtn">Add</button></div>
+          <div class="row" style="margin-top:6px"><input type="text" id="chanLabel" value="Fox 1" maxlength="24" aria-label="Label" style="width:40%"><input type="number" id="chanFreq" step="0.0125" value="146.5650" aria-label="MHz" style="width:40%"><button class="btn small" id="chanAddBtn">Add</button></div>
           <div class="tools" style="margin-top:8px">
-            <button class="btn small" id="chanDefaultsBtn" title="146.565 and 433.900, the dc34fox frequencies">Fox defaults</button>
+            <button class="btn small" id="chanDefaultsBtn" title="146.565 and 433.900, the frequencies the fox firmware ships with">Fox defaults</button>
             <button class="btn small" id="chanPinAllBtn" title="Pin every channel to the hunt board">Pin all to the board</button>
             <button class="btn small" id="chanSeekBtn" title="Autoseek steps these channels instead of a scan range">Seek these</button>
             <button class="btn small" id="chanExportBtn">Export JSON</button>
@@ -309,8 +313,14 @@
         <div class="field" style="margin-top:10px"><label for="callsign">Callsign</label>
           <div class="row"><input type="text" id="callsign" placeholder="N0CALL" maxlength="16" style="text-transform:uppercase" disabled><button class="btn small" id="callsignBtn" disabled>Save</button></div>
           <p class="hint">Kept on the board. The transmit-capable firmware refuses to key while this is <code>N0CALL</code>; the receive-only build just stores it.</p></div>
+        <span class="label group" style="margin-top:14px">Wires on this fox</span>
+        <p class="hint">A stock fox has none of these and everything over USB still works. Tick what has been soldered (see <a href="pins.html">Pins</a>); the page shows the matching features and hides the rest.</p>
         <div class="field" style="margin-top:10px"><label class="row check"><input type="checkbox" id="sqWire" disabled> <span>SQ wire soldered to D2 <span class="sq-dot" id="sqDot" title="carrier detect"></span> <span id="sqLevel" class="dim"></span></span></label>
           <p class="hint">Only tick this once a wire joins the SA868's SQ pad (module pin 1) to the XIAO's D2. The firmware then times carrier edges itself (<code>events</code>), and the cycle countdown comes from those instead of RSSI thresholds. Kept on the board.</p></div>
+        <div class="field"><label class="row check"><input type="checkbox" id="wireAudioIn"> <span>AF_OUT (pin 3) → a sound card's input</span></label>
+          <p class="hint">The audio the page decodes is this fox's receiver. Then noise quieting can drive the burst countdown too. Without it the Audio section still works from any other radio's headphone jack — just not tied to this fox's channel.</p></div>
+        <div class="field"><label class="row check"><input type="checkbox" id="wireAudioOut"> <span>A sound card's output → MIC_IN (pin 18)</span></label>
+          <p class="hint">Needed only to send SSTV pictures from the page (transmit build). Shows the <em>Send a picture</em> block under Transmit.</p></div>
         <p class="hint" id="foxStatus"></p>
         </div>
         <div class="setup-card">
@@ -338,6 +348,17 @@
       <p class="hint">The firmware installer is below, and the <a href="pins.html">pins page</a> shows where the two optional wires go.</p>
     </section>
     <section class="hunt" id="huntPanel" hidden aria-label="Hunt">
+      <div class="hunt-guide" id="hGuide"><span class="step" id="hGuideStep">1</span><span id="hGuideText">Connect a fox, then Start receiver on the fox's channel — or Seek to find it.</span><button class="btn small" id="hHelpBtn" aria-expanded="false" title="How a hunt goes">?</button></div>
+      <div class="hunt-help" id="hHelp" hidden>
+        <ol>
+          <li><b>Get on the channel.</b> Start receiver listens where the fox is tuned (Receiver presets, or the event channels under Setup). Seek steps through the channels and stops where something is on.</li>
+          <li><b>Read the big number.</b> RSSI is the module's 0–255 strength byte: warmer / colder, not metres. It climbs as you walk toward the fox and as the antenna points at it. Max remembers the best you have seen.</li>
+          <li><b>Wait for the fox to key.</b> Foxes transmit in bursts. After two bursts the countdown says when the next one comes: move during the gap, measure during the burst.</li>
+          <li><b>Take a bearing during a burst.</b> With a directional antenna: hold Capture, turn a full circle, release. The lobe's centre is the direction. Two bearings from two places give a fix.</li>
+          <li><b>Too strong?</b> When RSSI pins at the top, add attenuation (the dropdown is bookkeeping; the attenuator is in the coax) or swap to a worse antenna, and keep walking.</li>
+          <li><b>Pin what you find.</b> The hunt board keeps each fox's channel, ID, last-heard time and cycle. Audio from a sound card decodes the fox's Morse ID into the board.</li>
+        </ol>
+      </div>
       <div class="hunt-top">
         <div class="hunt-tile"><div class="lbl">RSSI</div><div class="huge" id="hRssi">—</div><div class="sub" id="hFreq">not connected</div></div>
         <div class="hunt-tile"><div class="lbl">Next burst</div><div class="huge" id="hCountdown">—</div><div class="sub" id="hCycle">listen on a channel to learn the fox's cycle</div></div>
@@ -350,7 +371,7 @@
         <button class="btn" id="hPinBtn" disabled>Pin</button>
         <select id="hAtten" aria-label="Attenuator in line" title="Attenuator in line (bookkeeping)"><option value="0">no atten</option><option value="3">3 dB</option><option value="6">6 dB</option><option value="10">10 dB</option><option value="20">20 dB</option><option value="30">30 dB</option><option value="40">40 dB</option></select>
       </div>
-      <p class="hint" id="hStatus">Connect a fox (or the simulated one), then Start receiver or Seek.</p>
+      <p class="hint" id="hStatus"></p>
       <div class="chart-wrap"><canvas id="huntCanvas"></canvas></div>
       <div class="hunt-bearing">
         <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:6px"><h2>Bearing</h2><span class="hint" id="hHeading">heading —</span></div>

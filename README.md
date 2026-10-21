@@ -209,6 +209,31 @@ firmware is not configurable because it is not meant to be general.
 
 Connect the antenna (or a dummy load) before powering the board, every time.
 
+### Which wire does what
+
+Nothing on the page needs a soldering iron. A stock fox over USB gives
+everything in the Receiver, Scan & seek, Hunt and Session sections — RSSI,
+scans, autoseek, the burst countdown (from RSSI thresholds), bearings, the
+board, recording and replay — and, with the TX build, keying, tones, Morse
+and the beacon. Each wire adds a layer, and the page shows the matching
+features once you tick the wire under Setup → *Wires on this fox*:
+
+| Wire | Adds | Without it |
+|---|---|---|
+| **SQ** (pin 1 → D2) | hardware-timed carrier edges: an exact burst countdown | the countdown comes from RSSI thresholds (fine for a fox that keys hard) |
+| **AF_OUT** (pin 3 → sound card in) | CW ID decoding, SSTV decoding and noise quieting *from this fox's receiver* | the Audio section still works from **any other radio** — see below |
+| **MIC_IN** (sound card out → pin 18) | SSTV pictures *from* this fox (TX build) | no SSTV transmit; the beacon and Morse still work (the firmware makes those tones itself) |
+
+**The audio input does not have to come from the fox.** The decoders take
+whatever the sound card hears. A handheld tuned to the fox's channel with
+its headphone jack into the sound card gives the CW ID, SSTV pictures and
+the quieting readout on the page, while the fox does RSSI and the
+countdown over USB beside it. That is the no-soldering way to get the
+whole page: a stock fox, a Baofeng, and a USB sound card. The one thing it
+cannot do is tie the audio to the fox's channel for the countdown (the
+*AF_OUT* tick does that), because the page cannot know what the handheld
+is tuned to.
+
 ### AF_OUT for the audio decoders
 
 The SA868's pin 3, `AF_OUT`, is not connected on the fox PCB. Solder a wire
@@ -330,7 +355,11 @@ Chrome for Android has Web Serial: a USB-OTG adapter (or a C-to-C cable on
 a phone that does host mode) into the fox's USB-C, open the page, Connect,
 pick the fox in the chooser. The fox draws under 100 mA in receive. The
 *Hunt* in the top bar gives the one-column layout for one-handed use;
-*Setup* is the set-once page: the event's channels (they become the
+A phone without a headphone jack can still do audio: a USB-C hub (an OTG
+hub with two or more ports) carries the fox and a USB sound card at once,
+and Android treats the sound card as a microphone and a speaker. Bluetooth
+audio is not a substitute — its processing and latency wreck Morse timing
+and SSTV tones. *Setup* is the set-once page: the event's channels (they become the
 presets, the scan presets, the autoseek list and a one-click set of board
 pins; export/import as JSON), this fox's stored settings, this page's
 settings, and the firmware installer. iPhones and iPads cannot connect (no Web Serial in

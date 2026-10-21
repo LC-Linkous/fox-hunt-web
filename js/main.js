@@ -29,7 +29,7 @@ import { initSidebar } from './ui/sidebar.js';
 import { download, stamp, canvasPng } from './ui/export.js';
 import { createRecorder } from './ui/recorder.js';
 
-const APP_VERSION = '0.10.0';
+const APP_VERSION = '0.10.1';
 const FW_NEEDED = '0.5.0';
 const BURST = 10;                 // readings per `rssi N` while the receiver runs (~1 s of data per round trip)
 const $ = id => document.getElementById(id);
@@ -353,6 +353,7 @@ function setMode(m) {
   if (m === 'setup') renderChannels();
   updateHunt(); chart.dirty = true;
 }
+$('hHelpBtn').addEventListener('click', () => { const h = $('hHelp'); h.hidden = !h.hidden; $('hHelpBtn').setAttribute('aria-expanded', String(!h.hidden)); });
 $('modeBench').addEventListener('click', () => setMode('bench')); $('modeHunt').addEventListener('click', () => setMode('hunt')); $('modeSetup').addEventListener('click', () => setMode('setup'));
 
 // ---------------------------------------------------------------- event channels
@@ -372,13 +373,20 @@ function renderChannels() {
   }
   if (!list.length) { const tr = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 3; td.className = 'hint'; td.textContent = 'none yet — add the event\'s frequencies, or take the fox defaults'; tr.appendChild(td); tb.appendChild(tr); }
 }
+// which wires this fox has (browser-side; the firmware only knows about SQ)
+function applyWires() {
+  $('wireAudioIn').checked = !!settings.wireAudioIn; $('wireAudioOut').checked = !!settings.wireAudioOut;
+  $('audioSource').textContent = settings.wireAudioIn ? 'Audio source: this fox\'s AF_OUT wire — decoders and noise quieting apply to the channel the fox is tuned to.' : 'Audio source: any receiver\'s headphone or speaker jack into the sound card (a handheld on the fox\'s channel works). Tick "AF_OUT → sound card" under Setup if the wire is on this fox, so quieting can drive the countdown.';
+  sstvTxEnable();
+}
+for (const id of ['wireAudioIn', 'wireAudioOut']) $(id).addEventListener('change', () => { settings[id] = $(id).checked; saveSettings(); applyWires(); if (id === 'wireAudioIn' && !settings.wireAudioIn && state.cycle.source === 'audio') { state.cycle.hardware = false; state.cycle.source = null; } });
 $('chanAddBtn').addEventListener('click', () => {
   const f = parseFloat($('chanFreq').value); if (!Number.isFinite(f)) { chanNote('enter a frequency in MHz'); return; }
   const list = channels(); if (list.some(c => Math.abs(c.f - f) < 1e-6)) { chanNote('already listed'); return; }
-  list.push({ label: $('chanLabel').value.trim() || `Fox ${list.length + 1}`, f }); saveChannels(list); $('chanLabel').value = ''; $('chanFreq').value = ''; chanNote('');
+  list.push({ label: $('chanLabel').value.trim() || `Fox ${list.length + 1}`, f }); saveChannels(list); $('chanLabel').value = `Fox ${list.length + 1}`; $('chanFreq').value = (f + 0.025).toFixed(4); chanNote(`added ${f.toFixed(4)}`);
 });
 $('chanFreq').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('chanAddBtn').click(); } });
-$('chanDefaultsBtn').addEventListener('click', () => { const list = channels(); for (const [label, f] of [['DC34 fox 2 m', 146.565], ['DC34 fox 70 cm', 433.9]]) if (!list.some(c => Math.abs(c.f - f) < 1e-6)) list.push({ label, f }); saveChannels(list); });
+$('chanDefaultsBtn').addEventListener('click', () => { const list = channels(); for (const [label, f] of [['Fox 2 m', 146.565], ['Fox 70 cm', 433.9]]) if (!list.some(c => Math.abs(c.f - f) < 1e-6)) list.push({ label, f }); saveChannels(list); });
 $('chanPinAllBtn').addEventListener('click', () => { let n = 0; for (const c of channels()) { if (!board.get(c.f)) n++; board.pin(c.f, { label: c.label }); } chanNote(`${n} pinned (${channels().length} on the board)`); });
 $('chanSeekBtn').addEventListener('click', () => { settings.seekChannels = true; $('seekChans').checked = true; saveSettings(); chanNote(channels().length ? 'autoseek will step the event channels (until a scan range is chosen in Scan & seek)' : 'no channels to seek'); });
 $('chanExportBtn').addEventListener('click', () => download(`fox-channels-${stamp()}.json`, new Blob([JSON.stringify({ tool: 'fox-hunt-web', channels: channels() }, null, 2)], { type: 'application/json' })));
@@ -478,6 +486,22 @@ function renderBoard() {
 function drawSpark(c, a) { const ctx = c.getContext('2d'); ctx.clearRect(0, 0, c.width, c.height); if (!a.length) return; const [lo, hi] = rssiRange(); ctx.strokeStyle = cssVar('--trace'); ctx.lineWidth = 1; ctx.beginPath(); a.forEach((v, i) => { const x = i / Math.max(1, a.length - 1) * c.width, y = c.height - 1 - Math.max(0, Math.min(1, (v - lo) / (hi - lo))) * (c.height - 2); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.stroke(); }
 board.onChange = renderBoard;
 /** The hunt panel and the Receiver kv: readout, countdown, cycle. Called often; cheap. */
+/** The "what now" line at the top of the hunt page: one step at a time, from the state. */
+function huntGuide(st, live, last, sLeft) {
+  const g = $('hGuide'), fox = state.fox; let step, text, on = false;
+  if (!fox) { step = 1; text = 'Connect a fox (or try the simulated one), then Start receiver on the fox\'s channel — or Seek to find it.'; }
+  else if (!fox.bandSet) { step = 1; text = 'Pick the SA868 fitted to this fox from the Module dropdown.'; }
+  else if (state.capturing) { step = 4; on = true; text = 'Turn a full circle, slowly, then release. The polar plot fills as you go.'; }
+  else if (state.seeking && !state.seekDwelling) { step = 1; text = 'Seeking: stepping the channels. It stops where a signal rises over that channel\'s floor.'; }
+  else if (!live) { step = 1; text = `Start receiver to listen on ${fmtMHz(fox.state.freq)}${channels().length > 1 ? ', or Seek to step the event channels' : ''}.`; }
+  else if (st.on) { step = 3; on = true; text = `FOX IS ON — walk toward the warmer number; with a yagi, swing it and note where RSSI peaks (max ${state.max}). Hold Capture for a bearing.`; }
+  else if (st.cycles === 0) { step = 2; text = `Listening on ${fmtMHz(fox.state.freq)}. RSSI ${last?.rssi >= 0 ? last.rssi : '—'} is the floor; the fox keying will jump it. Stay here until it does.`; }
+  else if (st.cycles === 1) { step = 2; text = 'One burst heard. One more and the countdown will say when the next comes — stay on the channel.'; }
+  else if (sLeft != null && sLeft > 8) { step = 3; text = `Gap: ${Math.round(sLeft)} s until the fox keys again. Move toward the last peak now; be still and ready when it comes back.`; }
+  else if (sLeft != null) { step = 3; text = 'Coming up — be still, antenna ready, eyes on the number.'; }
+  else { step = 2; text = 'Listening.'; }
+  g.classList.toggle('on', on); $('hGuideStep').textContent = String(step); $('hGuideText').textContent = text;
+}
 function updateHunt() {
   const now = Date.now(), st = state.cycle.status(now), last = state.samples[state.samples.length - 1];
   const live = (state.live || state.seeking) && last && now - last.t < 3000;
@@ -486,6 +510,7 @@ function updateHunt() {
   const cd = fmtCountdown(st, now), sLeft = st.nextAt ? (st.nextAt - now) / 1000 : null;
   $('hCountdown').textContent = cd; $('hCountdown').className = 'huge' + (st.on ? ' now' : sLeft != null && sLeft < 5 ? ' soon' : st.nextAt ? '' : ' dim');
   $('hCycle').textContent = st.cycles >= 2 ? `on ${(st.onMs / 1000).toFixed(0)} s every ${(st.periodMs / 1000).toFixed(0)} s · from ${st.cycles} bursts${st.cycles < 4 ? ' (settling)' : st.spread > 0.4 ? ' (irregular)' : ''}${st.hardware ? (state.cycle.source === 'audio' ? ' · quieting' : ' · SQ wire') : ''}` : st.cycles === 1 ? 'one burst heard; the period needs a second' : 'listen on a channel to learn the fox\'s cycle';
+  huntGuide(st, live, last, sLeft);
   $('cycleNow').textContent = st.cycles >= 2 ? `${(st.onMs / 1000).toFixed(0)} s on / ${(st.periodMs / 1000).toFixed(0)} s · ${st.cycles} bursts` : st.cycles === 1 ? '1 burst' : '—';
   $('cycleNext').textContent = cd;
   { const sel = $('hAtten'), v = String(settings.attenDb); let o = [...sel.options].find(x => x.value === v);
@@ -691,6 +716,7 @@ function stopTxPoll() { if (state.txPoll) { clearInterval(state.txPoll); state.t
 // Picture → encoder → sound card out → SA868 MIC_IN. The fox is keyed for the frame with `mic line`.
 const sstvTxNote = (t, err = false) => { $('sstvTxNote').textContent = t; $('sstvTxNote').classList.toggle('err', err); };
 function sstvTxEnable() {
+  $('sstvTxBlock').hidden = !settings.wireAudioOut; $('sstvTxOff').hidden = !!settings.wireAudioOut;
   const fox = state.fox, ok = !!fox?.state.txAvailable && fox.state.armed && hasPlayout() && (fox.ident.build?.[1] ?? 0) >= 5;
   ['sstvFile', 'sstvTxMode'].forEach(id => $(id).disabled = !fox);
   $('sstvSendBtn').disabled = !ok || !sstvTx.image || sstvTx.busy;
@@ -840,7 +866,7 @@ const quiet = createQuieting({ sampleRate: 48000 });
 let quietFeeder = null, quietShown = 0;   // edges into whichever cycle tracker is current, like the SQ wire's, when no SQ wire is declared
 quiet.onChange = (t, on, db) => {
   $('quietText').textContent = `${on ? 'carrier' : 'quiet'} · ${db.toFixed(0)} dB`;
-  if (state.fox?.state.sqWire || !state.fox) return;
+  if (state.fox?.state.sqWire || !state.fox || !settings.wireAudioIn) return;   // only this fox's own audio says anything about its channel
   if (!quietFeeder || quietFeeder.tracker !== state.cycle) { quietFeeder = createEdgeFeeder(state.cycle); quietFeeder.tracker = state.cycle; quietFeeder.sync(0, 0); }
   state.cycle.hardware = true; state.cycle.source = 'audio';
   quietFeeder.feed([{ ms: t, on }]); quietFeeder.apply(on, t); chart.huntDirty = true;
@@ -1002,5 +1028,5 @@ scanCanvas.addEventListener('click', e => {
   if (i != null) { $('freq').value = state.scan.f[i].toFixed(4); tune(); }
 });
 
-applyModel();
+applyModel(); applyWires();
 setMode(settings.mode === 'hunt' ? 'hunt' : 'bench'); renderBoard(); renderBearings(); updateHeading();

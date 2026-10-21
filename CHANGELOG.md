@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.10.1 — hunt guide, wires, small fixes
+
+- **Hunt page**: a "what now" line at the top that follows the state — connect,
+  start on the channel, listening for the first burst, FOX IS ON (walk /
+  swing / capture), the gap countdown, coming up — and a "?" that opens a
+  six-step how-a-hunt-goes.
+- **Setup → Wires on this fox**: SQ (firmware), AF_OUT → sound card, sound
+  card → MIC_IN. The page shows the matching features: SSTV transmit only
+  with the MIC_IN wire; noise quieting drives the countdown only when the
+  audio is this fox's own. Audio from any other radio still decodes.
+- README: which wire does what, the no-soldering setup (stock fox + a
+  handheld's headphone jack into the sound card), phones without a jack
+  (OTG hub + USB sound card).
+- Event channels: the add row is prefilled and adds on the first click; the
+  empty-list note wraps; labels say "Fox", not an event name.
+- About: affiliation line corrected.
+
 ## v0.10.0 — SSTV transmit, Setup page, noise quieting
 
 - **Firmware 0.5.0**: `mic pwm|line` — in line mode D1 floats while keyed

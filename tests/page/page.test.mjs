@@ -190,7 +190,10 @@ ptest('hunt mode on an Android phone: panel shown, sidebar hidden, no horizontal
   assert.ok(await d.page.locator('#firmwareSection').isHidden(), 'the installer is not in the hunt column');
   const over = await d.page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   assert.ok(over <= 0, `horizontal overflow ${over}px`);
+  assert.match(await d.text('hGuideText'), /Start receiver/);
   await d.page.tap('#hLiveBtn'); await d.page.waitForFunction(() => /^\d+$/.test(document.getElementById('hRssi').textContent));
+  await d.page.waitForFunction(() => /FOX IS ON|Listening on|floor/.test(document.getElementById('hGuideText').textContent), null, { timeout: 15000 });
+  await d.page.tap('#hHelpBtn'); assert.ok(await d.page.locator('#hHelp').isVisible());
   // the heading slider stands in for a compass the phone did not offer
   await d.page.locator('#hHeadingSlider').evaluate(el => { el.value = 90; el.dispatchEvent(new Event('input', { bubbles: true })); });
   assert.match(await d.text('hHeading'), /90° \(manual\)/);
@@ -241,6 +244,8 @@ ptest('audio: the CW decoder reads W1AW from the sound card and the SSTV decoder
 ptest('setup page: event channels feed the presets, the board and autoseek; export/import round-trips', async () => {
   const d = await demoPage(); await d.page.click('#modeSetup');
   assert.ok(await d.page.locator('#setupPanel').isVisible()); assert.ok(await d.page.locator('#sidebar').isHidden()); assert.ok(await d.page.locator('#firmwareSection').isVisible());
+  await d.page.click('#chanAddBtn');                               // the prefilled row adds on the first click
+  assert.equal(await d.page.locator('#chanBody tr').count(), 1); assert.match(await d.text('chanNote'), /added 146\.5650/);
   await d.page.fill('#chanLabel', 'Fox A'); await d.page.fill('#chanFreq', '146.52'); await d.page.click('#chanAddBtn');
   await d.page.click('#chanDefaultsBtn');
   assert.equal(await d.page.locator('#chanBody tr').count(), 3);
@@ -264,6 +269,9 @@ ptest('SSTV transmit: a picture keys the fox in line mode for the frame, Stop un
   const d = await demoPage();
   await d.page.click('#modeSetup'); await d.page.fill('#callsign', 'w1aw'); await d.page.click('#callsignBtn'); await d.page.waitForFunction(() => /W1AW stored/.test(document.getElementById('foxStatus').textContent));
   await d.page.click('#modeBench'); await d.open('transmit');
+  assert.ok(await d.page.locator('#sstvTxBlock').isHidden(), 'hidden until the MIC_IN wire is ticked'); assert.ok(await d.page.locator('#sstvTxOff').isVisible());
+  await d.page.click('#modeSetup'); await d.page.check('#wireAudioOut'); await d.page.click('#modeBench'); await d.open('transmit');
+  assert.ok(await d.page.locator('#sstvTxBlock').isVisible());
   await d.page.waitForFunction(() => !document.getElementById('txArm').disabled); await d.page.check('#txArm'); await d.page.waitForFunction(() => !document.getElementById('keyBtn').disabled);
   const png = await d.page.evaluate(() => { const c = document.createElement('canvas'); c.width = 160; c.height = 120; const g = c.getContext('2d'); g.fillStyle = '#f00'; g.fillRect(0, 0, 160, 120); return c.toDataURL('image/png'); });
   await d.page.setInputFiles('#sstvFile', { name: 't.png', mimeType: 'image/png', buffer: Buffer.from(png.split(',')[1], 'base64') });

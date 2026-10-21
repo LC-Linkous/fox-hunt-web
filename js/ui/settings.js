@@ -19,6 +19,8 @@ const DEFAULTS = {
   channels: [],           // the event's frequencies: [{ label, f }] (Setup page)
   seekChannels: false,    // autoseek steps the event channels rather than a scan range
   quieting: false,        // noise quieting from the audio path as a second carrier signal
+  wireAudioIn: false,     // this fox's AF_OUT goes to the sound card the page listens to
+  wireAudioOut: false,    // a sound card's output goes to this fox's MIC_IN (SSTV transmit)
   seekMargin: 20, seekDwell: 30, seekPin: true,
   manualHeading: 0,       // the heading slider, for devices without a compass
 };
