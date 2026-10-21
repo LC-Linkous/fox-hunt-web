@@ -15,7 +15,10 @@ const DEFAULTS = {
   palette: DEFAULT_PALETTE,   // waterfall and heat-strip colours
   heatStrip: true,        // the strip under the RSSI plot
   attenDb: 0,             // attenuator in line, dB; bookkeeping only (see the Receiver section)
-  mode: 'bench',          // 'bench' | 'hunt' layout
+  mode: 'bench',          // 'bench' | 'hunt' | 'setup' layout
+  channels: [],           // the event's frequencies: [{ label, f }] (Setup page)
+  seekChannels: false,    // autoseek steps the event channels rather than a scan range
+  quieting: false,        // noise quieting from the audio path as a second carrier signal
   seekMargin: 20, seekDwell: 30, seekPin: true,
   manualHeading: 0,       // the heading slider, for devices without a compass
 };

@@ -12,7 +12,9 @@ class FakeRepl extends ShellLink {
   _out(s) { this._feed(this.enc.encode(s)); }
   async _write(s) {
     for (const ch of s) {
-      if (ch === '\x03') { if (this.mode === 'running') { this.mode = 'repl'; this._out('\r\nKeyboardInterrupt\r\n>>> '); } continue; }
+      // the real board: Ctrl+C stops code.py and prints "Press any key to enter the REPL"; the REPL prompt only comes after another byte
+      if (ch === '\x03') { if (this.mode === 'running') { this.mode = 'pressany'; this._out('\r\nKeyboardInterrupt\r\n\r\nCode done running.\r\n\r\nPress any key to enter the REPL. Use CTRL-D to reload.\r\n'); } continue; }
+      if (this.mode === 'pressany') { this.mode = 'repl'; this._out('\r\nAdafruit CircuitPython 9.2.0 on 2024-10-28; Seeed Studio XIAO ESP32C3 with ESP32-C3\r\n>>> '); if (ch === '\n' || ch === '\r') continue; }
       if (ch === '\x01') { this.mode = 'raw'; this.code = ''; this._out('\r\nraw REPL; CTRL-B to exit\r\n>'); continue; }
       if (ch === '\x02') { this.mode = 'repl'; this._out('\r\n>>> '); continue; }
       if (ch === '\x04') {
@@ -43,7 +45,7 @@ test('configureFirmware flips exactly the TX gate', () => {
   assert.match(on, /^TX_ENABLED = True$/m); assert.equal(on.length, FIRMWARE.length + 'True'.length - 'False'.length);
   assert.equal(configureFirmware(on, { txEnabled: false }), FIRMWARE);
   assert.throws(() => configureFirmware('print(1)\n'));
-  assert.equal(firmwareVersion(FIRMWARE), '0.4.0');
+  assert.equal(firmwareVersion(FIRMWARE), '0.5.0');
   assert.ok(![...FIRMWARE].some(c => c.charCodeAt(0) > 127), 'firmware must be ASCII so JSON literals are valid Python');
 });
 
@@ -58,7 +60,7 @@ test('installCodePy writes the whole file in chunks, renames it into place, and 
   assert.equal(link.files.get('code.py'), FIRMWARE);
   assert.ok(!link.files.has('code.py.new'));
   assert.ok(link.writes >= Math.ceil(FIRMWARE.length / 500));
-  assert.equal(r.version, 'foxhunt 0.4.0 xiao-esp32c3 sa868-unset');
+  assert.equal(r.version, 'foxhunt 0.5.0 xiao-esp32c3 sa868-unset');
   assert.deepEqual([...new Set(steps)], ['interrupt', 'raw-repl', 'write', 'reboot', 'done']);
 });
 

@@ -63,8 +63,11 @@ with `board`, `busio`, `digitalio`, `pwmio`, `supervisor`, `microcontroller`,
 fake SA868 that answers the AT commands and models what is on the air, pins
 the test can read or drive (including refusing to claim a pin twice, as
 CircuitPython does), an NVM that survives a simulated reboot, and a console.
-Add a firmware test for every new command and a page test for every new
-control. The page tests skip when Playwright is missing locally and fail in
+The audio test feeds Chromium a WAV built at test time by the project's own
+encoders (`tests/page/make-fixture.mjs`) as a fake microphone; it needs the
+full Chromium (`npx playwright install chromium`), not only the headless
+shell, and skips itself otherwise. Add a firmware test for every new
+command and a page test for every new control. The page tests skip when Playwright is missing locally and fail in
 CI (`REQUIRE_BROWSER=1`).
 
 The three shared-kit files carry one small addition over tinysa-web's copy

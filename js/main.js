@@ -19,7 +19,9 @@ import { renderPolar } from './plot/polar.js';
 import { installCodePy, configureFirmware, firmwareVersion } from './device/installer.js';
 import { createCapture, listInputs, hasAudioCapture } from './audio/capture.js';
 import { CwDecoder } from './audio/cw.js';
-import { SstvDecoder } from './audio/sstv.js';
+import { SstvDecoder, MODES as SSTV_MODES, encodeSstv } from './audio/sstv.js';
+import { createPlayout, listOutputs, fitImage, hasPlayout } from './audio/playout.js';
+import { createQuieting } from './audio/quieting.js';
 import { cssVar } from './plot/common.js';
 import { settings, applyTheme, initSettingsPanel, rssiRange, save as saveSettings } from './ui/settings.js';
 import { initConsole } from './ui/console.js';
@@ -27,8 +29,8 @@ import { initSidebar } from './ui/sidebar.js';
 import { download, stamp, canvasPng } from './ui/export.js';
 import { createRecorder } from './ui/recorder.js';
 
-const APP_VERSION = '0.9.0';
-const FW_NEEDED = '0.4.0';
+const APP_VERSION = '0.10.0';
+const FW_NEEDED = '0.5.0';
 const BURST = 10;                 // readings per `rssi N` while the receiver runs (~1 s of data per round trip)
 const $ = id => document.getElementById(id);
 
@@ -46,6 +48,7 @@ const state = {
 };
 const board = createBoard();
 const pair = {};   // the bench pair's second fox; filled in below
+const sstvTx = { playout: createPlayout(), image: null, samples: null, mode: null, busy: false };   // SSTV transmit, wired up below
 const seeker = createSeeker();
 state.lut = buildLut(settings.palette);
 const chart = { dirty: true };
@@ -84,11 +87,14 @@ function applyModel() {
   if (bands.length) { $('freq').min = bands[0][0]; $('freq').max = bands[bands.length - 1][1]; }
   // frequency presets: fox frequencies, then each band's bottom edge
   const pills = $('presets'); pills.innerHTML = '';
-  const presets = set ? [...m.foxFreqs.map(f => ({ f, label: `${f.toFixed(3)} fox` })), ...bands.map(([a]) => ({ f: a, label: `${a.toFixed(3)}` }))] : [];
+  const ev = channels().filter(c => inBands(c.f, m?.moduleBands || []));
+  const foxF = ev.length ? ev.map(c => ({ f: c.f, label: `${c.f.toFixed(3)} ${c.label}`.trim() })) : (m?.foxFreqs || []).map(f => ({ f, label: `${f.toFixed(3)} fox` }));
+  const presets = set ? [...foxF, ...bands.map(([a]) => ({ f: a, label: `${a.toFixed(3)}` }))] : [];
   for (const p of presets) { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn small'; b.textContent = p.label; b.title = 'Enter and tune'; b.addEventListener('click', () => { $('freq').value = p.f.toFixed(4); tune(); }); pills.appendChild(b); }
   // scan presets: a window around each fox frequency
   const sp = $('scanPresets'); sp.innerHTML = '';
-  for (const f of (set ? m.foxFreqs : [])) { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn small'; b.textContent = `${f.toFixed(3)} ±150 kHz`; b.addEventListener('click', () => { $('scanStart').value = (f - 0.15).toFixed(4); $('scanStop').value = (f + 0.15).toFixed(4); updateScanCount(); }); sp.appendChild(b); }
+  for (const f of (set ? foxF.map(x => x.f) : [])) { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn small'; b.textContent = `${f.toFixed(3)} ±150 kHz`; b.addEventListener('click', () => { $('scanStart').value = (f - 0.15).toFixed(4); $('scanStop').value = (f + 0.15).toFixed(4); updateScanCount(); }); sp.appendChild(b); }
+  { const sel = $('scanStep'), keep = sel.value, steps = (m?.stepsKHz || [12.5, 25, 50, 100]); if ([...sel.options].map(o => o.value).join() !== steps.join()) { sel.innerHTML = steps.map(k => `<option value="${k}">${k} kHz</option>`).join(''); sel.value = steps.map(String).includes(keep) ? keep : '12.5'; } }
   if (set && m.scanDefault && !inBands(parseFloat($('scanStart').value), m.moduleBands)) { $('scanStart').value = m.scanDefault.start.toFixed(4); $('scanStop').value = m.scanDefault.stop.toFixed(4); }
   if (set && !inBands(parseFloat($('freq').value), m.moduleBands)) $('freq').value = m.defaultFreq.toFixed(4);
   // fox configuration panel
@@ -124,7 +130,7 @@ function applyTx() {
   const fb = $('foxBtn'); fb.textContent = state.foxRunning ? 'Stop beacon' : 'Start beacon'; fb.setAttribute('aria-pressed', String(state.foxRunning)); fb.classList.toggle('running', state.foxRunning);
   $('foxStatusLine').textContent = state.foxRunning ? `running, ${fox.state.foxCycles} cycles` : `stopped${fox.state.foxCycles ? `, ${fox.state.foxCycles} cycles sent` : ''}`;
   $('txBadge').hidden = !(state.keyed || state.foxRunning);
-  morseEstimate();
+  morseEstimate(); sstvTxEnable();
 }
 function setEnabled(on) {
   const set = on && state.fox.bandSet;
@@ -339,23 +345,63 @@ $('pinPeakBtn').addEventListener('click', () => { const s = state.scan; if (!s) 
 
 // ---------------------------------------------------------------- hunt: mode, seek, board, countdown
 function setMode(m) {
+  if (!['bench', 'hunt', 'setup'].includes(m)) m = 'bench';
   settings.mode = m; saveSettings(); chart.huntDirty = true; polarDirty = true;
-  document.body.classList.toggle('hunt', m === 'hunt'); $('huntPanel').hidden = m !== 'hunt';
-  $('modeBench').setAttribute('aria-pressed', String(m === 'bench')); $('modeHunt').setAttribute('aria-pressed', String(m === 'hunt'));
+  document.body.classList.toggle('hunt', m === 'hunt'); document.body.classList.toggle('setup', m === 'setup');
+  $('huntPanel').hidden = m !== 'hunt'; $('setupPanel').hidden = m !== 'setup';
+  for (const [id, v] of [['modeBench', 'bench'], ['modeHunt', 'hunt'], ['modeSetup', 'setup']]) $(id).setAttribute('aria-pressed', String(m === v));
+  if (m === 'setup') renderChannels();
   updateHunt(); chart.dirty = true;
 }
-$('modeBench').addEventListener('click', () => setMode('bench')); $('modeHunt').addEventListener('click', () => setMode('hunt'));
+$('modeBench').addEventListener('click', () => setMode('bench')); $('modeHunt').addEventListener('click', () => setMode('hunt')); $('modeSetup').addEventListener('click', () => setMode('setup'));
+
+// ---------------------------------------------------------------- event channels
+// The event's frequencies, kept in settings.channels: [{ label, f }]. They feed the
+// Receiver presets, the scan presets, the autoseek list and the board.
+const chanNote = t => { $('chanNote').textContent = t; };
+function channels() { return (settings.channels || []).filter(c => Number.isFinite(c.f)); }
+function saveChannels(list) { settings.channels = list.map(c => ({ label: String(c.label || '').slice(0, 24), f: +(+c.f).toFixed(4) })).sort((a, b) => a.f - b.f); saveSettings(); renderChannels(); applyModel(); }
+function renderChannels() {
+  const tb = $('chanBody'); tb.innerHTML = ''; const list = channels();
+  for (const [i, c] of list.entries()) {
+    const tr = document.createElement('tr');
+    const tdL = document.createElement('td'); const inL = document.createElement('input'); inL.type = 'text'; inL.value = c.label; inL.maxLength = 24; inL.setAttribute('aria-label', 'Label'); inL.addEventListener('change', () => { list[i].label = inL.value; saveChannels(list); }); tdL.appendChild(inL);
+    const tdF = document.createElement('td'); const inF = document.createElement('input'); inF.type = 'number'; inF.step = '0.0125'; inF.value = c.f.toFixed(4); inF.setAttribute('aria-label', 'MHz'); inF.addEventListener('change', () => { const f = parseFloat(inF.value); if (Number.isFinite(f)) { list[i].f = f; saveChannels(list); } }); tdF.appendChild(inF);
+    const tdX = document.createElement('td'); const rm = document.createElement('button'); rm.className = 'btn small'; rm.textContent = '×'; rm.title = 'Remove'; rm.addEventListener('click', () => { list.splice(i, 1); saveChannels(list); }); tdX.appendChild(rm);
+    tr.append(tdL, tdF, tdX); tb.appendChild(tr);
+  }
+  if (!list.length) { const tr = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 3; td.className = 'hint'; td.textContent = 'none yet — add the event\'s frequencies, or take the fox defaults'; tr.appendChild(td); tb.appendChild(tr); }
+}
+$('chanAddBtn').addEventListener('click', () => {
+  const f = parseFloat($('chanFreq').value); if (!Number.isFinite(f)) { chanNote('enter a frequency in MHz'); return; }
+  const list = channels(); if (list.some(c => Math.abs(c.f - f) < 1e-6)) { chanNote('already listed'); return; }
+  list.push({ label: $('chanLabel').value.trim() || `Fox ${list.length + 1}`, f }); saveChannels(list); $('chanLabel').value = ''; $('chanFreq').value = ''; chanNote('');
+});
+$('chanFreq').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('chanAddBtn').click(); } });
+$('chanDefaultsBtn').addEventListener('click', () => { const list = channels(); for (const [label, f] of [['DC34 fox 2 m', 146.565], ['DC34 fox 70 cm', 433.9]]) if (!list.some(c => Math.abs(c.f - f) < 1e-6)) list.push({ label, f }); saveChannels(list); });
+$('chanPinAllBtn').addEventListener('click', () => { let n = 0; for (const c of channels()) { if (!board.get(c.f)) n++; board.pin(c.f, { label: c.label }); } chanNote(`${n} pinned (${channels().length} on the board)`); });
+$('chanSeekBtn').addEventListener('click', () => { settings.seekChannels = true; $('seekChans').checked = true; saveSettings(); chanNote(channels().length ? 'autoseek will step the event channels (until a scan range is chosen in Scan & seek)' : 'no channels to seek'); });
+$('chanExportBtn').addEventListener('click', () => download(`fox-channels-${stamp()}.json`, new Blob([JSON.stringify({ tool: 'fox-hunt-web', channels: channels() }, null, 2)], { type: 'application/json' })));
+$('chanImportBtn').addEventListener('click', async () => {
+  const text = await pickFile(); if (!text) return;
+  try { const o = JSON.parse(text); const list = (Array.isArray(o) ? o : o.channels || []).map(c => ({ label: c.label || '', f: parseFloat(c.f ?? c.mhz ?? c.freq) })).filter(c => Number.isFinite(c.f)); if (!list.length) throw new Error('no channels in that file'); saveChannels(list); chanNote(`${list.length} channels loaded`); }
+  catch (e) { chanNote('import failed: ' + e.message); }
+});
 // attenuator select in the hunt panel mirrors the Receiver one
 $('hAtten').addEventListener('change', () => setAtten(parseInt($('hAtten').value, 10)));
 
 const seekMargin = $('seekMargin'), seekDwell = $('seekDwell'), seekPin = $('seekPin');
 seekMargin.value = settings.seekMargin; seekDwell.value = settings.seekDwell; seekPin.checked = settings.seekPin;
+$('seekChans').checked = !!settings.seekChannels; $('seekChans').addEventListener('change', () => { settings.seekChannels = $('seekChans').checked; saveSettings(); });
 seekMargin.addEventListener('change', () => { settings.seekMargin = Math.max(5, parseInt(seekMargin.value, 10) || 20); seeker.margin = settings.seekMargin; saveSettings(); });
 seekDwell.addEventListener('change', () => { settings.seekDwell = Math.max(5, parseInt(seekDwell.value, 10) || 30); seeker.dwellMs = settings.seekDwell * 1000; saveSettings(); });
 seekPin.addEventListener('change', () => { settings.seekPin = seekPin.checked; saveSettings(); });
 
 /** Channel list for the seek: the Scan section's start / stop / step. */
-function seekChannels() { const { start, stop, stepKHz, count } = scanParams(); if (!count || count > 128) return []; const ch = []; for (let i = 0; i < count; i++) ch.push(+(start + i * stepKHz / 1000).toFixed(4)); return ch; }
+function seekChannels() {
+  if (settings.seekChannels) { const ev = channels().filter(c => inBands(c.f, state.fox?.env.moduleBands || [])).map(c => c.f); if (ev.length) return ev; }
+  const { start, stop, stepKHz, count } = scanParams(); if (!count || count > 128) return []; const ch = []; for (let i = 0; i < count; i++) ch.push(+(start + i * stepKHz / 1000).toFixed(4)); return ch;
+}
 function seekStatus(t) { $('seekStatus').textContent = t; if (state.seeking) $('hStatus').textContent = t; }
 async function seekLoop() {
   const fox = state.fox, gen = ++state.gen.seek;
@@ -439,7 +485,7 @@ function updateHunt() {
   $('hFreq').textContent = state.fox ? `${state.fox.state.freq != null ? fmtMHz(state.fox.state.freq) : 'not tuned'}${state.max >= 0 ? ` · max ${state.max}` : ''}${settings.attenDb ? ` · ${settings.attenDb} dB atten` : ''}` : 'not connected';
   const cd = fmtCountdown(st, now), sLeft = st.nextAt ? (st.nextAt - now) / 1000 : null;
   $('hCountdown').textContent = cd; $('hCountdown').className = 'huge' + (st.on ? ' now' : sLeft != null && sLeft < 5 ? ' soon' : st.nextAt ? '' : ' dim');
-  $('hCycle').textContent = st.cycles >= 2 ? `on ${(st.onMs / 1000).toFixed(0)} s every ${(st.periodMs / 1000).toFixed(0)} s · from ${st.cycles} bursts${st.cycles < 4 ? ' (settling)' : st.spread > 0.4 ? ' (irregular)' : ''}${st.hardware ? ' · SQ wire' : ''}` : st.cycles === 1 ? 'one burst heard; the period needs a second' : 'listen on a channel to learn the fox\'s cycle';
+  $('hCycle').textContent = st.cycles >= 2 ? `on ${(st.onMs / 1000).toFixed(0)} s every ${(st.periodMs / 1000).toFixed(0)} s · from ${st.cycles} bursts${st.cycles < 4 ? ' (settling)' : st.spread > 0.4 ? ' (irregular)' : ''}${st.hardware ? (state.cycle.source === 'audio' ? ' · quieting' : ' · SQ wire') : ''}` : st.cycles === 1 ? 'one burst heard; the period needs a second' : 'listen on a channel to learn the fox\'s cycle';
   $('cycleNow').textContent = st.cycles >= 2 ? `${(st.onMs / 1000).toFixed(0)} s on / ${(st.periodMs / 1000).toFixed(0)} s · ${st.cycles} bursts` : st.cycles === 1 ? '1 burst' : '—';
   $('cycleNext').textContent = cd;
   { const sel = $('hAtten'), v = String(settings.attenDb); let o = [...sel.options].find(x => x.value === v);
@@ -641,6 +687,62 @@ $('foxBtn').addEventListener('click', async () => {
 function startTxPoll() { stopTxPoll(); state.txPoll = setInterval(async () => { const fox = state.fox; if (!fox || !fox.state.armed || state.scanning) return; try { await fox.txStatus(); if (state.foxRunning || fox.state.foxRunning) await fox.foxStatus(); } catch {} applyTx(); }, 1000); }
 function stopTxPoll() { if (state.txPoll) { clearInterval(state.txPoll); state.txPoll = null; } }
 
+// ---------------------------------------------------------------- SSTV transmit
+// Picture → encoder → sound card out → SA868 MIC_IN. The fox is keyed for the frame with `mic line`.
+const sstvTxNote = (t, err = false) => { $('sstvTxNote').textContent = t; $('sstvTxNote').classList.toggle('err', err); };
+function sstvTxEnable() {
+  const fox = state.fox, ok = !!fox?.state.txAvailable && fox.state.armed && hasPlayout() && (fox.ident.build?.[1] ?? 0) >= 5;
+  ['sstvFile', 'sstvTxMode'].forEach(id => $(id).disabled = !fox);
+  $('sstvSendBtn').disabled = !ok || !sstvTx.image || sstvTx.busy;
+  $('sstvPreviewBtn').disabled = !sstvTx.image || sstvTx.busy || !hasPlayout();
+  $('sstvStopBtn').disabled = !sstvTx.busy;
+  if (fox && fox.state.txAvailable && (fox.ident.build?.[1] ?? 0) < 5) sstvTxNote('needs firmware 0.5.0 (`mic line`); install it from the Firmware section');
+}
+async function sstvOutputs() { try { const outs = await listOutputs(); const sel = $('sstvOut'), keep = sel.value; sel.innerHTML = '<option value="">Default output</option>' + outs.map(o => `<option value="${o.id}">${o.label}</option>`).join(''); sel.value = outs.some(o => o.id === keep) ? keep : ''; } catch {} }
+function sstvTxRender() {
+  const mode = SSTV_MODES[parseInt($('sstvTxMode').value, 10)]; sstvTx.mode = mode; sstvTx.samples = null;
+  const cv = $('sstvTxPreview'); cv.width = mode.width; cv.height = mode.height;
+  if (!sstvTx.image) { const g = cv.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, cv.width, cv.height); return; }
+  const fit = fitImage(sstvTx.image, mode.width, mode.height); cv.getContext('2d').drawImage(fit.canvas, 0, 0); sstvTx.rgba = fit.rgba;
+  sstvTxNote(`${mode.name}, ${mode.width}×${mode.height}, about ${Math.round(frameSeconds(mode))} s on the air`);
+}
+function frameSeconds(mode) { let ms = 300 + 10 + 300 + 30 + 8 * 30 + 30 + (mode.preMs || 0); for (let y = 0; y < mode.height; y++) for (const sgm of mode.segments(y)) ms += sgm.ms; return ms / 1000; }
+function sstvEncode() { if (!sstvTx.samples) { sstvTxNote('encoding…'); sstvTx.samples = encodeSstv(sstvTx.mode, sstvTx.rgba, { sampleRate: 48000, amplitude: 0.5 }); } return sstvTx.samples; }
+$('sstvFile').addEventListener('change', async () => {
+  const f = $('sstvFile').files?.[0]; if (!f) return;
+  try { const img = new Image(); img.src = URL.createObjectURL(f); await img.decode(); sstvTx.image = img; sstvTxRender(); sstvOutputs(); }
+  catch (e) { sstvTxNote('could not read that picture: ' + e.message, true); }
+  sstvTxEnable();
+});
+$('sstvTxMode').addEventListener('change', () => { sstvTxRender(); sstvTxEnable(); });
+const sstvProgress = (p, total) => { $('sstvTxProgress').hidden = false; $('sstvTxFill').style.width = (p * 100).toFixed(1) + '%'; sstvTxNote(`${Math.round(p * total)} / ${Math.round(total)} s`); };
+$('sstvPreviewBtn').addEventListener('click', async () => {
+  if (sstvTx.busy || !sstvTx.image) return; sstvTx.busy = true; sstvTxEnable();
+  try { const smp = sstvEncode(); await sstvTx.playout.play(smp, 48000, { deviceId: $('sstvOut').value, onProgress: sstvProgress }); sstvTxNote('preview done (nothing was keyed)'); }
+  catch (e) { sstvTxNote(e.message, true); }
+  finally { sstvTx.busy = false; $('sstvTxProgress').hidden = true; sstvTxEnable(); }
+});
+$('sstvSendBtn').addEventListener('click', async () => {
+  const fox = state.fox; if (!fox || sstvTx.busy || !sstvTx.image) return;
+  sstvTx.busy = true; sstvTx.stopAsked = false; sstvTxEnable(); stopLive(); stopScanLoop(); stopSeek();
+  const smp = sstvEncode(), secs = smp.length / 48000;
+  let keyed = false;
+  try {
+    await fox.mic('line');
+    await fox.keyOn(Math.min(120, secs + 2)); keyed = true; state.keyed = true; $('txBadge').hidden = false; applyTx();
+    await new Promise(r => setTimeout(r, 750));                       // PTT lead, like the Morse path
+    const done = sstvTx.stopAsked ? false : await sstvTx.playout.play(smp, 48000, { deviceId: $('sstvOut').value, onProgress: sstvProgress });
+    sstvTxNote(done ? `sent: ${sstvTx.mode.name}, ${Math.round(secs)} s` : 'stopped');
+  } catch (e) { sstvTxNote(e.message, true); con.err('sstv: ' + e.message); }
+  finally {
+    if (keyed) { try { await fox.keyOff(); } catch {} }
+    try { await fox.mic('pwm'); } catch {}
+    state.keyed = false; sstvTx.busy = false; $('sstvTxProgress').hidden = true; applyTx(); sstvTxEnable();
+  }
+});
+$('sstvStopBtn').addEventListener('click', () => { sstvTx.stopAsked = true; sstvTx.playout.stop(); });
+sstvTxRender();
+
 // ---------------------------------------------------------------- bench pair
 // A second fox, on its own port, as the beacon. Its commands go through the
 // same Fox class and the same gates; the console shows them prefixed [B].
@@ -733,11 +835,24 @@ function audioGranted() {
   if (bad.length) con.err('audio: the browser left ' + bad.join(', ') + '; decoding may be unreliable');
 }
 capture.onLevel = db => { $('audioLevel').textContent = `${db.toFixed(0)} dBFS${db > -1 ? ' — clipping, turn the sound card input down' : db < -40 ? ' — low, turn it up' : ''}`; };
+// noise quieting: the hiss as a carrier detector (Audio section toggle)
+const quiet = createQuieting({ sampleRate: 48000 });
+let quietFeeder = null, quietShown = 0;   // edges into whichever cycle tracker is current, like the SQ wire's, when no SQ wire is declared
+quiet.onChange = (t, on, db) => {
+  $('quietText').textContent = `${on ? 'carrier' : 'quiet'} · ${db.toFixed(0)} dB`;
+  if (state.fox?.state.sqWire || !state.fox) return;
+  if (!quietFeeder || quietFeeder.tracker !== state.cycle) { quietFeeder = createEdgeFeeder(state.cycle); quietFeeder.tracker = state.cycle; quietFeeder.sync(0, 0); }
+  state.cycle.hardware = true; state.cycle.source = 'audio';
+  quietFeeder.feed([{ ms: t, on }]); quietFeeder.apply(on, t); chart.huntDirty = true;
+};
+$('quietChk').checked = !!settings.quieting;
+$('quietChk').addEventListener('change', () => { settings.quieting = $('quietChk').checked; saveSettings(); quiet.reset(); $('quietText').textContent = settings.quieting ? (capture.running ? 'listening' : 'start audio') : 'off'; if (!settings.quieting && state.cycle.source === 'audio') { state.cycle.hardware = false; state.cycle.source = null; } });
 capture.onBlock = (block, sr) => {
   if (cwDec.sr !== sr) { cwDec.sr = sr; cwDec.block = Math.round(sr * cwDec.blockMs / 1000); }
   if (sstvDec.sr !== sr) sstvDec.sr = sr;
   cwDec.autoTone = $('cwAuto').checked && sstvDec.state !== 'image';   // a picture's tones are not a CW pitch
   cwDec.feed(block); sstvDec.feed(block);
+  if (settings.quieting) { if (quiet.sampleRate !== sr) { quiet.sampleRate = sr; quiet.reset(); } quiet.feed(block, Date.now()); if (Date.now() - quietShown > 250) { quietShown = Date.now(); $('quietText').textContent = `${quiet.on ? 'carrier' : 'quiet'} · ${quiet.quietingDb.toFixed(0)} dB`; } }
   chart.dirty = true;
 };
 cwDec.onText = ch => { const el = $('cwDecoded'); el.textContent = (el.textContent + ch).slice(-2000); $('cwSaveBtn').disabled = false; $('hCwText').textContent = el.textContent.slice(-80); if (ch === ' ') noteDecoded(); };

@@ -79,13 +79,14 @@ ESP32 passes commands and answers between USB and the module's UART.
   firmware involved. The firmware's `volume` setting is that pad's level.
   See [Audio](#audio).
 
-## What it does (v0.9)
+## What it does (v0.10)
 
-The sidebar is seven sections, in the order a hunt uses them: **Receiver**,
+The sidebar is six sections, in the order a hunt uses them: **Receiver**,
 **Scan & seek**, **Hunt** (bearing and the hunt board), **Audio**, **Session**
-(recording, location, replay, pictures and CSV), **Transmit** (this fox, and a
-second fox as the beacon) and **Setup** (this fox's stored settings, this
-page's settings). Hunt mode replaces all of it with one column.
+(recording, location, replay, pictures and CSV) and **Transmit** (this fox,
+a second fox as the beacon, SSTV). The top bar switches between **Bench**
+(all of it), **Hunt** (one column for a phone) and **Setup** (the event's
+channels, this fox, this page, the firmware — set once).
 
 
 - **Connect / detect** — reads `version` and `info`, refuses a port that is not
@@ -328,7 +329,11 @@ drops you to the REPL.
 Chrome for Android has Web Serial: a USB-OTG adapter (or a C-to-C cable on
 a phone that does host mode) into the fox's USB-C, open the page, Connect,
 pick the fox in the chooser. The fox draws under 100 mA in receive. The
-*Hunt* in the top bar gives the one-column layout for one-handed use. iPhones and iPads cannot connect (no Web Serial in
+*Hunt* in the top bar gives the one-column layout for one-handed use;
+*Setup* is the set-once page: the event's channels (they become the
+presets, the scan presets, the autoseek list and a one-click set of board
+pins; export/import as JSON), this fox's stored settings, this page's
+settings, and the firmware installer. iPhones and iPads cannot connect (no Web Serial in
 Safari, and Apple allows no other engine); they get the audio decoders, the
 simulated fox and session replay. The About page has the full table.
 
@@ -365,6 +370,29 @@ section is hidden entirely when the firmware reports `tx: disabled`.
 The beacon firmware in `dc34fox` is still the simpler thing for a hunt: it
 needs no computer. This one is for the bench, for a fox you can stop and
 retune from the page, and for the day the SSTV encoder gets an audio path.
+
+### Sending a picture (SSTV)
+
+Transmit → *Send a picture*: pick an image, a mode (Robot36 36 s through
+Martin M1 114 s), the sound card the page should play through, and *Send*.
+The page tells the fox `mic line` so its own tone pin floats, keys it for
+the frame, plays the encoded tones out of the sound card into the SA868's
+`MIC_IN` pad (pin 18), unkeys, and puts the mic back to `pwm`. *Preview
+tones* plays the same audio without keying, for checking the wiring or
+feeding the decoder through a loopback. Set the sound card's output level
+so the SA868 is not over-deviated: start low, decode it on the bench pair,
+raise until the picture is clean. Firmware 0.5.0+.
+
+### Noise quieting
+
+Audio → *Noise quieting*: with the fox's squelch at 0, an FM receiver's
+hiss (the 2.5–4 kHz part of the audio) drops when a carrier arrives,
+modulated or not. The page tracks that drop in dB against a slow noise
+reference and reports carrier / quiet with hysteresis (on above 8 dB, off
+below 4). When the SQ wire is not declared, those edges feed the burst
+countdown, so a fox with only the AF_OUT wire still gets hardware-grade
+cycle timing — from the audio instead of a pin. Shown in the Audio section;
+the hunt panel marks "· quieting".
 
 ## Audio
 
@@ -425,7 +453,7 @@ connected to the page, that connection is used.
 **By hand (Thonny):** *Download code.py*, open it in Thonny with the
 interpreter set to *CircuitPython (generic)* on the fox's port, *File →
 Save As… → CircuitPython device* as exactly `code.py`, Ctrl+D. A healthy
-first boot prints `foxhunt 0.4.0 xiao-esp32c3 sa868-unset` then `ch> `.
+first boot prints `foxhunt 0.5.0 xiao-esp32c3 sa868-unset` then `ch> `.
 Disconnect Thonny (it holds the port), then connect here and pick the
 module.
 

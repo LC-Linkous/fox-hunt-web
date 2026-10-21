@@ -34,6 +34,7 @@
   <div class="views mode-tabs" role="group" aria-label="Layout">
     <button class="btn small" id="modeBench"  aria-pressed="true" title="Every section and window">Bench</button>
     <button class="btn small" id="modeHunt"  aria-pressed="false" title="One column: readout, countdown, board. For a phone and a yagi.">Hunt</button>
+    <button class="btn small" id="modeSetup" aria-pressed="false" title="Set once: the event's channels, this fox, this page, the firmware.">Setup</button>
   </div>
   <span class="status" id="status"><span class="dot"></span><span id="statusText">Not connected</span></span>
   <span class="badge" id="rxBadge" hidden title="PTT is held high by the firmware; this build cannot transmit">RX only</span>
@@ -116,6 +117,7 @@
           <div class="field"><label for="seekDwell">Dwell up to</label><div class="row"><input type="number" id="seekDwell" value="30" min="5" max="300" step="5"><span class="suffix">s</span></div></div>
         </div>
         <label class="row check"><input type="checkbox" id="seekPin" checked> <span>Pin every channel it stops on to the hunt board</span></label>
+        <label class="row check"><input type="checkbox" id="seekChans"> <span>Step the event channels (Setup) instead of the scan range</span></label>
         <div class="stack" style="margin-top:8px"><button class="btn primary block" id="seekBtn" disabled aria-pressed="false">Seek</button></div>
         <div class="tools"><button class="btn small" id="seekSkipBtn" disabled title="Move on now">Skip</button><button class="btn small" id="seekLockBtn" disabled aria-pressed="false" title="Stay on this channel until unlocked">Lock</button><span class="hint" id="seekStatus" style="align-self:center"></span></div>
       </div>
@@ -150,6 +152,9 @@
         <div class="stack"><button class="btn primary block" id="audioBtn" aria-pressed="false">Start audio</button></div>
         <dl class="kv"><dt>Permission</dt><dd id="audioPerm">—</dd><dt>Input</dt><dd id="audioInfo">—</dd><dt>Level</dt><dd id="audioLevel">—</dd><dt>Processing</dt><dd id="audioProc">asks for: echo cancellation off, auto gain off, noise suppression off, mono, 48 kHz</dd></dl>
         <p class="hint">Audio is decoded in memory and never stored; the decoded text and pictures are saved only when you click Save. If the browser grants a setting the page didn't ask for (an automatic gain, say), it is shown above in red — that is the usual reason a decoder "doesn't work".</p>
+        <span class="label group">Noise quieting</span>
+        <label class="row check"><input type="checkbox" id="quietChk"> <span>Use the hiss as a carrier detector <span class="hint">An FM receiver's hiss (2.5–4 kHz here) drops when a carrier arrives, modulated or not. With the fox's squelch at 0 this is a second "signal present" signal that needs neither RSSI nor the SQ wire; it feeds the burst countdown when no SQ wire is declared.</span></span></label>
+        <dl class="kv"><dt>Quieting</dt><dd id="quietText">off</dd></dl>
         <span class="label group">CW</span>
         <div class="two-col">
           <div class="field"><label for="cwTone">Pitch</label><div class="row"><input type="number" id="cwTone" value="800" min="300" max="1500" step="10"><span class="suffix">Hz</span></div></div>
@@ -227,6 +232,21 @@
           <div class="field"><label for="foxDelay">Seconds between cycles</label><input type="number" id="foxDelay" value="30" min="5" max="600" step="5" style="width:100%" disabled></div>
           <div class="stack"><button class="btn primary block" id="foxBtn" disabled aria-pressed="false">Start beacon</button></div>
           <dl class="kv"><dt>Beacon</dt><dd id="foxStatusLine">stopped</dd></dl>
+          <span class="label group">Send a picture (SSTV)</span>
+          <p class="hint" style="margin:0 0 6px">This page plays the SSTV tones out of a sound card wired to the SA868's <code>MIC_IN</code> pad (pin 18); the fox is told <code>mic line</code> so its own tone pin floats, then keyed for the frame. Firmware 0.5.0+. <em>Preview tones</em> plays without keying, for checking the wiring or feeding the decoder.</p>
+          <div class="field"><label for="sstvFile">Picture</label><input type="file" id="sstvFile" accept="image/*" disabled></div>
+          <div class="two-col">
+            <div class="field"><label for="sstvTxMode">Mode</label><select id="sstvTxMode" style="width:100%" disabled><option value="8">Robot36 (36 s)</option><option value="40">Martin M2 (58 s)</option><option value="56">Scottie S2 (71 s)</option><option value="60">Scottie S1 (110 s)</option><option value="44">Martin M1 (114 s)</option></select></div>
+            <div class="field"><label for="sstvOut">Sound card out</label><select id="sstvOut" style="width:100%"><option value="">Default output</option></select></div>
+          </div>
+          <canvas id="sstvTxPreview" width="320" height="240" style="width:100%;max-width:320px;background:#000;border:1px solid var(--edge);border-radius:4px;display:block;margin:4px 0"></canvas>
+          <div class="tools">
+            <button class="btn primary" id="sstvSendBtn" disabled>Send picture</button>
+            <button class="btn small" id="sstvPreviewBtn" disabled title="Play the tones without keying">Preview tones</button>
+            <button class="btn small" id="sstvStopBtn" disabled>Stop</button>
+          </div>
+          <div class="fw-progress" id="sstvTxProgress" hidden><div class="bar"><div class="fill" id="sstvTxFill"></div></div></div>
+          <p class="hint" id="sstvTxNote"></p>
         </div>
         <p class="hint" id="txStatus"></p>
         <span class="label group" style="margin-top:14px">A second fox as the beacon</span>
@@ -254,10 +274,30 @@
         <p class="hint" id="pairNote"></p>
       </div>
     </section>
-    <section data-section="setup">
-      <h2><button type="button" aria-expanded="false">Setup</button></h2>
-      <div class="body">
-        <span class="label group">This fox</span>
+  </aside>
+  <div class="sidebar-handle" id="sidebarHandle" title="Drag to resize the sidebar"></div>
+
+  <!-- ================================================================ main -->
+  <main class="main">
+    <section class="setup" id="setupPanel" hidden aria-label="Setup">
+      <p class="hint" style="margin:0">Things set once and then left alone. Everything here is remembered — the fox's own settings on the board, the rest in this browser.</p>
+      <div class="setup-grid">
+        <div class="setup-card">
+          <h2>Event channels</h2>
+          <p class="hint">The frequencies the foxes use at this event. They become the Receiver presets, the scan presets, the autoseek list and a one-click set of hunt-board pins. Edit any time; a hunt rarely knows them all beforehand.</p>
+          <table class="markers chans" id="chanTable"><thead><tr><th>Label</th><th>MHz</th><th></th></tr></thead><tbody id="chanBody"></tbody></table>
+          <div class="row" style="margin-top:6px"><input type="text" id="chanLabel" placeholder="Fox 1" maxlength="24" style="width:40%"><input type="number" id="chanFreq" step="0.0125" placeholder="146.5650" style="width:40%"><button class="btn small" id="chanAddBtn">Add</button></div>
+          <div class="tools" style="margin-top:8px">
+            <button class="btn small" id="chanDefaultsBtn" title="146.565 and 433.900, the dc34fox frequencies">Fox defaults</button>
+            <button class="btn small" id="chanPinAllBtn" title="Pin every channel to the hunt board">Pin all to the board</button>
+            <button class="btn small" id="chanSeekBtn" title="Autoseek steps these channels instead of a scan range">Seek these</button>
+            <button class="btn small" id="chanExportBtn">Export JSON</button>
+            <button class="btn small" id="chanImportBtn">Import JSON</button>
+          </div>
+          <p class="hint" id="chanNote"></p>
+        </div>
+        <div class="setup-card">
+          <h2>This fox</h2>
         <p class="hint" style="margin:0 0 8px">Settings kept on the board, in the ESP32's NVM. They survive reboots and re-saving <code>code.py</code>.</p>
         <dl class="kv">
           <dt>Firmware</dt><dd id="fwVersion">—</dd>
@@ -272,7 +312,9 @@
         <div class="field" style="margin-top:10px"><label class="row check"><input type="checkbox" id="sqWire" disabled> <span>SQ wire soldered to D2 <span class="sq-dot" id="sqDot" title="carrier detect"></span> <span id="sqLevel" class="dim"></span></span></label>
           <p class="hint">Only tick this once a wire joins the SA868's SQ pad (module pin 1) to the XIAO's D2. The firmware then times carrier edges itself (<code>events</code>), and the cycle countdown comes from those instead of RSSI thresholds. Kept on the board.</p></div>
         <p class="hint" id="foxStatus"></p>
-        <span class="label group" style="margin-top:14px">This page</span>
+        </div>
+        <div class="setup-card">
+          <h2>This page</h2>
         <form id="settingsForm">
           <div class="field"><span class="label">Theme</span>
             <div class="radios row" style="gap:16px"><label><input type="radio" name="theme" value="dark"> <span>Dark</span></label><label><input type="radio" name="theme" value="light"> <span>Light</span></label></div></div>
@@ -291,13 +333,10 @@
           <span class="label group">Debugging</span>
           <label class="row check"><input type="checkbox" name="rawBytes"> <span>Echo raw received chunks in the console</span></label>
         </form>
+        </div>
       </div>
+      <p class="hint">The firmware installer is below, and the <a href="pins.html">pins page</a> shows where the two optional wires go.</p>
     </section>
-  </aside>
-  <div class="sidebar-handle" id="sidebarHandle" title="Drag to resize the sidebar"></div>
-
-  <!-- ================================================================ main -->
-  <main class="main">
     <section class="hunt" id="huntPanel" hidden aria-label="Hunt">
       <div class="hunt-top">
         <div class="hunt-tile"><div class="lbl">RSSI</div><div class="huge" id="hRssi">—</div><div class="sub" id="hFreq">not connected</div></div>
@@ -409,7 +448,7 @@
 <footer>
   fox-hunt-web <span id="appVersion"></span> · Last updated <time id="updated" datetime="2026-10-20">2026-10-20</time> · Works in Chrome and Edge via Web Serial; audio decoding works in any browser. Page <a href="https://github.com/LC-Linkous/fox-hunt-web/blob/main/LICENSE">GPL-2.0</a>, firmware GPL-3.0.
   Maintained by <a href="https://github.com/LC-Linkous">LC Linkous</a>. For the <a href="https://github.com/HamRadioVillage/dc34fox">Ham Radio Village DC34 fox</a>; not affiliated with the Village, NiceRF, or Seeed. No license is needed to listen; one is needed to transmit, and the firmware ships with transmit disabled.
-  <span class="fw"><b>Firmware:</b> <a href="#firmwareSection">install from this page</a>, or download <a id="fwLink" href="firmware/code.py" download="code.py">code.py</a> (firmware <span id="fwNeed">0.4.0</span>). Also on the <a href="https://github.com/LC-Linkous/fox-hunt-web/releases/latest">latest release</a>. Runs locally too: serve the folder and open it (<a href="about.html#local">how</a>).</span>
+  <span class="fw"><b>Firmware:</b> <a href="#firmwareSection">install from this page</a>, or download <a id="fwLink" href="firmware/code.py" download="code.py">code.py</a> (firmware <span id="fwNeed">0.5.0</span>). Also on the <a href="https://github.com/LC-Linkous/fox-hunt-web/releases/latest">latest release</a>. Runs locally too: serve the folder and open it (<a href="about.html#local">how</a>).</span>
 </footer>
 
 <script type="module" src="js/main.js"></script>

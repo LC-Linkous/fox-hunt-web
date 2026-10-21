@@ -14,7 +14,7 @@ export const FW_NAME_OLD = 'foxdemo';
 
 const COMMON = {
   board: BOARD,
-  stepsKHz: [12.5, 25],
+  stepsKHz: [12.5, 25, 50, 100],   // the scan step choices; 12.5 and 25 are channel spacings, 50 and 100 for a quick wide look
   rssiBurstMax: 200,          // firmware limits (PROTOCOL.md)
   scanMaxChannels: 128,
   scanMsPerChannel: 150,

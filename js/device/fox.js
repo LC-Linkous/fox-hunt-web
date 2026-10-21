@@ -35,7 +35,7 @@ export class Fox {
     this.link = link;
     this.model = UNSET_MODEL.key;
     this.ident = { version: '', info: '', firmware: '', build: null, board: '', module: '', band: null, label: '' };
-    this.state = { freq: null, bw: null, squelch: null, volume: null, band: null, callsign: '', moduleConnected: null, moduleVersion: '', rssiCmd: '', nvm: null, sqWire: false, sqCarrier: null,
+    this.state = { freq: null, bw: null, squelch: null, volume: null, band: null, callsign: '', moduleConnected: null, moduleVersion: '', rssiCmd: '', nvm: null, sqWire: false, sqCarrier: null, mic: 'pwm',
       txAvailable: false, armed: false, keyed: false, keyedLeft: 0, power: 'low', wpm: 12, tone: 800, foxmsg: '', foxdelay: 30, foxRunning: false, foxCycles: 0 };
     this.lastStatus = STATUS.OK;
     this.onWarning = null;         // (text) => void
@@ -82,6 +82,7 @@ export class Fox {
     s.moduleConnected = /connected/.test(kv.module || '') && !/NOT/.test(kv.module || '');
     s.moduleVersion = kv.module_version || ''; s.rssiCmd = kv.rssi_cmd || ''; s.nvm = kv.nvm === 'yes';
     s.txAvailable = kv.tx === 'available'; s.armed = kv.armed === 'yes';
+    s.mic = kv.mic === 'line' ? 'line' : 'pwm';
     s.sqWire = /^on/.test(kv.sq || ''); s.sqCarrier = s.sqWire ? /carrier/.test(kv.sq) : null;
     const k = /keyed ([\d.]+)/.exec(kv.ptt || ''); s.keyed = !!k; s.keyedLeft = k ? parseFloat(k[1]) : 0;
     s.power = kv.power || 'low'; s.wpm = parseInt(kv.wpm, 10) || 12; s.tone = parseInt(kv.tone, 10) || 800; s.foxmsg = kv.foxmsg || ''; s.foxdelay = parseInt(kv.foxdelay, 10) || 30;
@@ -241,7 +242,7 @@ export class Fox {
   async arm()    { this._needTx('tx arm'); await this._ok('tx arm', 'tx arm', { timeoutMs: 3000 }); this.state.armed = true; return true; }
   async disarm() { const r = await this._cmd('tx disarm', { timeoutMs: 3000 }); this.state.armed = false; this.state.keyed = false; this.state.foxRunning = false; return r.status === STATUS.OK; }
   /** Key the carrier for `seconds` (≤ 60). The firmware unkeys at the deadline on its own. */
-  async keyOn(seconds = 10) { this._needTx('tx on'); if (!(seconds > 0 && seconds <= 60)) this._blocked('tx on', '0.1..60 s'); const r = await this._ok(`tx on ${seconds}`, 'tx on', { timeoutMs: 3000 }); this.state.keyed = true; this.state.keyedLeft = parseFloat(r.body.split(/\s+/)[1]) || seconds; return this.state.keyedLeft; }
+  async keyOn(seconds = 10) { this._needTx('tx on'); if (!(seconds > 0 && seconds <= 120)) this._blocked('tx on', '0.1..120 s'); const r = await this._ok(`tx on ${seconds}`, 'tx on', { timeoutMs: 3000 }); this.state.keyed = true; this.state.keyedLeft = parseFloat(r.body.split(/\s+/)[1]) || seconds; return this.state.keyedLeft; }
   async keyOff() { await this._ok('tx off', 'tx off', { timeoutMs: 3000 }); this.state.keyed = false; this.state.keyedLeft = 0; }
   /** One tone on the air; blocks for its duration. */
   async tone(hz, ms) { this._needTx('tone'); if (!(hz >= 300 && hz <= 3000) || !(ms >= 10 && ms <= 5000)) this._blocked('tone', '300..3000 Hz, 10..5000 ms'); return (await this._ok(`tone ${Math.round(hz)} ${Math.round(ms)}`, 'tone', { timeoutMs: 4000 + ms })).body.trim(); }
@@ -270,6 +271,13 @@ export class Fox {
   async foxStart()  { this._needTx('fox start'); await this._ok('fox start', 'fox start', { timeoutMs: 3000 }); this.state.foxRunning = true; this.state.foxCycles = 0; return true; }
   /** Stops the beacon. Works mid-cycle: the byte aborts the Morse at the next character. */
   async foxStop()   { const r = await this._ok('fox stop', 'fox stop', { timeoutMs: 8000 }); this.state.foxRunning = false; return parseInt(r.body.split(/\s+/)[1], 10) || 0; }
+
+  /** mic() -> 'pwm'|'line'; mic('line') floats D1 while keyed so a sound card can drive MIC_IN (firmware 0.5.0+). */
+  async mic(mode) {
+    if (mode == null) { const v = (await this._cmd('mic', { quiet: true })).body.trim(); this.state.mic = v === 'line' ? 'line' : 'pwm'; return this.state.mic; }
+    if (!['pwm', 'line'].includes(mode)) this._blocked('mic', 'pwm or line');
+    const r = await this._ok(`mic ${mode}`, 'mic'); this.state.mic = r.body.trim(); return this.state.mic;
+  }
 
   // ---- the SQ wire -------------------------------------------------------
   /** sq() -> 'off'|'carrier'|'quiet'; sq(true|false) declares the wire present (persisted on the fox). */

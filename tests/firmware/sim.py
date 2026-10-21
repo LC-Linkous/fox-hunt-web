@@ -79,13 +79,15 @@ class PWM:
 
 class SA868:
     """The module on the UART. Models what is on the air so RSSI, scans and SQ agree."""
-    def __init__(self, sim, rssi_cmd='AT+RSSI?', answer=True, version='+VERSION:SA868S-VHF/UHF_V1.6'):
+    def __init__(self, sim, rssi_cmd='AT+RSSI?', answer=True, version='+VERSION:SA868S-VHF/UHF_V1.6', latency_ms=25):
         self.sim = sim
         self.rssi_cmd = rssi_cmd
         self.answer = answer
         self.version = version
+        self.latency_ms = latency_ms  # the module answers an AT line after about this long (real: 20-40 ms)
         self.rx = b''               # bytes the firmware has sent us, not yet a line
-        self.tx = b''               # our reply bytes waiting for the firmware
+        self.tx = b''               # our reply bytes, released to the firmware at tx_at
+        self.tx_at = 0
         self.freq = None
         self.bw = 1
         self.squelch = 3
@@ -97,9 +99,11 @@ class SA868:
     # --- what the firmware sees as busio.UART -------------------------------
     @property
     def in_waiting(self):
-        return len(self.tx)
+        return len(self.tx) if self.sim.clock.ms >= self.tx_at else 0
 
     def read(self, n):
+        if self.sim.clock.ms < self.tx_at:
+            return b''
         out, self.tx = self.tx[:n], self.tx[n:]
         return out
 
@@ -112,6 +116,7 @@ class SA868:
     def _reply(self, s):
         if self.answer:
             self.tx += (s + '\r\n').encode('ascii')
+            self.tx_at = self.sim.clock.ms + self.latency_ms
 
     def _handle(self, cmd):
         self.log.append(cmd)

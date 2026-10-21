@@ -37,7 +37,7 @@ export class DemoLink extends ShellLink {
       { f: 146.520, peak: 90, on: 3, period: 17, phase: 5, bearing: 180 },     // someone calling on the simplex channel
     ];
     this.heading = null;   // set by the page when a heading is known: the simulated antenna is a yagi pointing that way
-    this.sqOn = false; this.sqSince = Date.now();   // the simulated SQ wire: `sq on` declares it, `events` drains edges since sqSince
+    this.mic = 'pwm'; this.sqOn = false; this.sqSince = Date.now();   // the simulated SQ wire: `sq on` declares it, `events` drains edges since sqSince
     AIR.add(this);
   }
   /** Is the squelch open on `f` at `at`? The SA868's SQ pin: low when the signal clears the squelch setting. */
@@ -49,7 +49,7 @@ export class DemoLink extends ShellLink {
     return out;
   }
   async open() {
-    if (this.resetOnOpen) this._send(this.enc.encode(`\r\nfoxhunt 0.4.0 xiao-esp32c3 sa868-${this.band || 'unset'}\r\nSA868 ready, receiving on ${this.freq.toFixed(4)} MHz (${this.band})\r\nreceive only: PTT is held high. type help.\r\nch> `), 400);
+    if (this.resetOnOpen) this._send(this.enc.encode(`\r\nfoxhunt 0.5.0 xiao-esp32c3 sa868-${this.band || 'unset'}\r\nSA868 ready, receiving on ${this.freq.toFixed(4)} MHz (${this.band})\r\nreceive only: PTT is held high. type help.\r\nch> `), 400);
   }
   info() { return 'demo'; }
   async close() { this.closed = true; this._foxStop(); AIR.delete(this); }
@@ -133,13 +133,13 @@ export class DemoLink extends ShellLink {
     const needBand = () => { if (this.band) return false; body = 'error: module band not set; send `band vhf|uhf|dual` first'; return true; };
     switch (lc) {
       case '': break;
-      case 'version': body = `foxhunt 0.4.0 xiao-esp32c3 sa868-${this.band || 'unset'}`; break;
+      case 'version': body = `foxhunt 0.5.0 xiao-esp32c3 sa868-${this.band || 'unset'}`; break;
       case 'info': body = [
-        'firmware: foxhunt 0.4.0', 'board: xiao-esp32c3', `module: sa868-${this.band || 'unset'} connected`,
+        'firmware: foxhunt 0.5.0', 'board: xiao-esp32c3', `module: sa868-${this.band || 'unset'} connected`,
         'module_version: +VERSION:SA868S-VHF/UHF_V1.6 (demo)', `band: ${this.band || 'unset'}`, `bands: ${this._bandText()}`,
         `callsign: ${this.callsign}`, `freq: ${this.freq.toFixed(4)}`, `bw: ${this.bw}`, `squelch: ${this.squelch}`, `volume: ${this.volume}`,
         'rssi_cmd: AT+RSSI?', 'nvm: yes', `ptt: ${this._keyed() ? `TX keyed ${((this.keyedUntil - Date.now()) / 1000).toFixed(1)} s left` : 'rx'}`, `tx: ${this.txEnabled ? 'available' : 'disabled'}`,
-        `sq: ${!this.sqOn ? 'off' : this.carrierAt(this.freq) ? 'on carrier' : 'on quiet'}`,
+        `mic: ${this.mic}`, `sq: ${!this.sqOn ? 'off' : this.carrierAt(this.freq) ? 'on carrier' : 'on quiet'}`,
         `armed: ${this.armed ? 'yes' : 'no'}`, `power: ${this.power}`, `wpm: ${this.wpm}`, `tone: ${this.tone}`, `foxmsg: ${this.foxmsg}`, `foxdelay: ${this.foxdelay}`, `fox: ${this.foxRunning ? 'running' : 'stopped'} (${this.foxCycles} cycles)`].join('\n'); break;
       case 'help': body = 'commands: version info help band callsign tune rssi scan squelch bw volume at rx led sq events\n' + (this.txEnabled ? 'transmit: tx arm|disarm|on [s]|off  tone {Hz} {ms}  morse {text}  power low|high  wpm {n}  foxmsg {text}  foxdelay {s}  fox start|stop' : 'transmit: disabled in this build (TX_ENABLED is False)'); break;
       case 'band': {
@@ -190,6 +190,7 @@ export class DemoLink extends ShellLink {
         body = at === 'AT+DMOCONNECT' ? '+DMOCONNECT:0' : at === 'AT+VERSION' ? '+VERSION:SA868S-VHF/UHF_V1.6 (demo)' : at === 'AT+RSSI?' || at === 'RSSI?' ? `RSSI=${String(this.rssiAt(this.freq)).padStart(3, '0')}` : at.startsWith('AT+DMOSETGROUP=') ? '+DMOSETGROUP:0' : at.startsWith('AT+DMOSETVOLUME=') ? '+DMOSETVOLUME:0' : '(no reply)';
         delay = 60; break; }
       case 'rx': this._foxStop(); body = 'rx'; break;
+      case 'mic': { if (!a.length) { body = this.mic; break; } const w = a[0].toLowerCase(); if (!['pwm', 'line'].includes(w)) { body = 'usage: mic pwm|line'; break; } if (this._keyed()) { body = 'error: keyed; send `tx off` first'; break; } this.mic = w; body = w; break; }
       case 'sq': {
         if (!a.length) { body = !this.sqOn ? 'off' : this.carrierAt(this.freq) ? 'carrier' : 'quiet'; break; }
         const w = a[0].toLowerCase(); if (!['on', 'off'].includes(w)) { body = 'usage: sq on|off'; break; }
@@ -206,7 +207,7 @@ export class DemoLink extends ShellLink {
         if (!this.txEnabled) { body = 'error: transmit commands are not enabled in this firmware build (TX_ENABLED is False)'; break; }
         if (w === 'arm') { if (this.callsign === 'N0CALL') { body = 'error: no callsign stored; set one with `callsign` first'; break; } this.armed = true; body = 'armed'; }
         else if (w === 'disarm') { this.armed = false; this._foxStop(); body = 'off'; }
-        else if (w === 'on') { const why = this._txWhy(); if (why) { body = 'error: ' + why; break; } let secs = 10; if (a[1] != null) { secs = parseFloat(a[1]); if (!Number.isFinite(secs)) { body = 'usage: tx on [seconds]'; break; } } if (secs > 60) { body = 'usage: tx on [1..60]'; break; } secs = Math.max(0.1, secs); this.keyedFrom = Date.now(); this.keyedUntil = Date.now() + secs * 1000; this.txLog.push({ t: Date.now(), kind: 'key', secs }); body = `on ${secs.toFixed(1)}`; }
+        else if (w === 'on') { const why = this._txWhy(); if (why) { body = 'error: ' + why; break; } let secs = 10; if (a[1] != null) { secs = parseFloat(a[1]); if (!Number.isFinite(secs)) { body = 'usage: tx on [seconds]'; break; } } if (secs > 120) { body = 'usage: tx on [1..120]'; break; } secs = Math.max(0.1, secs); this.keyedFrom = Date.now(); this.keyedUntil = Date.now() + secs * 1000; this.txLog.push({ t: Date.now(), kind: 'key', secs }); body = `on ${secs.toFixed(1)}`; }
         else if (w === 'off') { this._unkey(); body = 'off'; }
         else body = 'usage: tx [arm|disarm|on [s]|off]';
         break; }

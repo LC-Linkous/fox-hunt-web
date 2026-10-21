@@ -45,6 +45,6 @@ jobs:
         with:
           node-version: "22"
       - name: Install Playwright Chromium
-        run: npm i --no-save playwright@1.49.1 && npx playwright install --with-deps chromium
+        run: npm i --no-save playwright@1.49.1 && npx playwright install --with-deps chromium chromium-headless-shell
       - name: Page tests in headless Chromium
         run: REQUIRE_BROWSER=1 node --test tests/page/page.test.mjs

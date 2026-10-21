@@ -72,11 +72,16 @@ The simulated fox and session replay work everywhere.
   when the wire is declared, RSSI thresholds otherwise. An optional solder
   job until the next PCB revision routes it. Autoseek still decides from
   RSSI (it hops channels, where the wire's edges would be its own hops).
-- **SSTV transmit**: sound card out → MIC pin, firmware keys for the
+- ~~**SSTV transmit**~~ shipped in 0.10 —: sound card out → MIC pin, firmware keys for the
   duration (`tx on <s>`), page plays the encoded picture. Needs the MIC
   audio path on the board checked for level.
 - Firmware `rssi stream` (unprompted, cancel on any byte) if the polled
   rate turns out to limit anything.
+
+## v0.10 — SSTV transmit, Setup page, noise quieting — shipped
+
+- SSTV transmit through a sound card into MIC_IN (`mic line`), the Setup
+  page with event channels, noise quieting as a second carrier detector.
 
 ## v0.9 — audit and simulated hardware — shipped
 

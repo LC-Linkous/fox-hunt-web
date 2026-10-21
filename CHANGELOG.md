@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.10.0 — SSTV transmit, Setup page, noise quieting
+
+- **Firmware 0.5.0**: `mic pwm|line` — in line mode D1 floats while keyed
+  so a sound card on the MIC_IN pad is the modulation; `tx on` cap raised to
+  120 s for a Martin M1 frame; `tone`/`morse`/`fox start` refused in line
+  mode.
+- **SSTV transmit** (Transmit → Send a picture): image file, mode, output
+  device, preview; `mic line` → key for the frame → play → unkey → `mic
+  pwm`; Preview tones without keying; Stop at any point, including during
+  the PTT lead.
+- **Setup page**: a third top-level mode beside Bench and Hunt. Event
+  channels (label + MHz; feed the Receiver presets, scan presets, autoseek
+  — "Step the event channels" — and a one-click set of board pins;
+  export/import JSON), this fox's stored settings, this page's settings,
+  with the firmware installer below. The sidebar is six sections.
+- **Noise quieting** (Audio): the 2.5–4 kHz hiss against a slow reference
+  as a carrier detector with hysteresis; feeds the burst countdown when no
+  SQ wire is declared ("· quieting" in the hunt panel).
+- Scan step choices come from the model (12.5/25/50/100 kHz).
+- Tests: firmware simulator models the SA868's reply latency; FakeRepl
+  models CircuitPython's "Press any key to enter the REPL"; page tests add
+  an Android (Pixel 7) touch profile, the Setup page, SSTV transmit, and
+  the audio path end to end with Chromium's fake microphone fed by our own
+  encoders (CW "W1AW" decoded, a Robot36 frame drawn); `quieting.test.mjs`.
+  49 node + 26 firmware + 15 page.
+
 ## v0.9.0 — audit, simulated hardware, pins
 
 A critical review of the page and the firmware, with two new test layers

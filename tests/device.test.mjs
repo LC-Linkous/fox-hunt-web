@@ -14,7 +14,7 @@ test('identify: a dual-band fox', async () => {
   const fox = await connected();
   assert.equal(fox.model, 'sa868-dual');
   assert.equal(fox.ident.board, 'xiao-esp32c3');
-  assert.deepEqual(fox.ident.build, [0, 4, 0]);
+  assert.deepEqual(fox.ident.build, [0, 5, 0]);
   assert.ok(fox.bandSet);
   assert.equal(fox.state.freq, 146.565);
   assert.ok(fox.ident.label.includes('dual-band'));
@@ -35,15 +35,15 @@ test('identify: a fox with no band set, then set it', async () => {
 });
 
 test('identifyDevice parses the version line', () => {
-  const d = identifyDevice('foxhunt 0.4.0 xiao-esp32c3 sa868-dual');
-  assert.deepEqual([d.ok, d.key, d.band, d.build], [true, 'sa868-dual', 'dual', [0, 4, 0]]);
-  assert.equal(identifyDevice('foxhunt 0.4.0 xiao-esp32c3 sa868-unset').key, 'sa868-unset');
+  const d = identifyDevice('foxhunt 0.5.0 xiao-esp32c3 sa868-dual');
+  assert.deepEqual([d.ok, d.key, d.band, d.build], [true, 'sa868-dual', 'dual', [0, 5, 0]]);
+  assert.equal(identifyDevice('foxhunt 0.5.0 xiao-esp32c3 sa868-unset').key, 'sa868-unset');
   assert.equal(identifyDevice('foxdemo 0.3.0 xiao-esp32c3 sa868-vhf').ok, true);   // the pre-rename firmware name
   assert.equal(identifyDevice('tinySA4_v1.4-252').ok, false);
-  assert.equal(identifyDevice('foxhunt 0.4.0 pico sa868-vhf').ok, false);
-  assert.equal(identifyDevice('foxhunt 0.4.0 xiao-esp32c3 sa818-vhf').ok, false);
+  assert.equal(identifyDevice('foxhunt 0.5.0 pico sa868-vhf').ok, false);
+  assert.equal(identifyDevice('foxhunt 0.5.0 xiao-esp32c3 sa818-vhf').ok, false);
   assert.deepEqual(parseVersion('1.10.3'), [1, 10, 3]);
-  assert.ok(buildAtLeast([0, 4, 0], FIRMWARE_FLOOR) && !buildAtLeast([0, 2, 9], FIRMWARE_FLOOR));
+  assert.ok(buildAtLeast([0, 5, 0], FIRMWARE_FLOOR) && !buildAtLeast([0, 2, 9], FIRMWARE_FLOOR));
 });
 
 test('classifyReply follows PROTOCOL.md', () => {
@@ -131,7 +131,7 @@ test('TX: callsign then arm then key; nothing keys before that', async () => {
   const left = await fox.keyOn(5); assert.ok(left > 4 && left <= 5);
   assert.ok((await fox.txStatus()).keyed);
   await fox.keyOff(); assert.ok(!(await fox.txStatus()).keyed);
-  await rejects(fox.keyOn(120), STATUS.BLOCKED);                   // over the cap
+  await rejects(fox.keyOn(121), STATUS.BLOCKED);                   // over the cap
   assert.equal(link.txLog.filter(x => x.kind === 'key').length, 1);
 });
 
@@ -162,7 +162,7 @@ test('TX: rx stops the beacon and unkeys', async () => {
 test('identify rides out a chip reset on port open (boot banner lands on the first command)', async () => {
   const link = new DemoLink({ band: 'vhf', resetOnOpen: true }); const fox = new Fox(link);
   await link.open(); await fox.identify();
-  assert.equal(fox.model, 'sa868-vhf'); assert.deepEqual(fox.ident.build, [0, 4, 0]);
+  assert.equal(fox.model, 'sa868-vhf'); assert.deepEqual(fox.ident.build, [0, 5, 0]);
   assert.equal(fox.state.freq, 146.565);           // info parsed cleanly after the banner
   assert.equal(await fox.tune(146.52), 146.52);     // and the link is in step afterwards
   await link.close();

@@ -178,9 +178,19 @@ Arms (reply `armed`) or disarms, which also stops the beacon and unkeys
 (reply `off`). Arming refuses while the callsign is `N0CALL`.
 
 ### `tx on [seconds]` / `tx off`
-Keys PTT for `seconds` (default 10, at most 60), carrier only, no audio;
-reply `on 10.0`. `tx off` unkeys at once. The page's Key button is press =
-`tx on 10`, release = `tx off`.
+Keys PTT for `seconds` (default 10, at most 120 — an SSTV Martin M1 frame
+is 114 s), carrier only unless `mic line` (below); reply `on 10.0`. `tx
+off` unkeys at once. The page's Key button is press = `tx on 10`, release =
+`tx off`.
+
+### `mic [pwm|line]` (firmware 0.5.0+)
+What drives the SA868's MIC_IN while keyed. `pwm` (the default at boot):
+the XIAO's D1 makes the tones for `tone`, `morse` and the beacon. `line`:
+D1 is released (hi-Z) for as long as PTT is low, so a sound card wired to
+the MIC_IN pad (pin 18) is the modulation — the page's SSTV transmit sends
+`mic line`, `tx on {frame seconds + 2}`, plays the frame, `tx off`, `mic
+pwm`. In line mode `tone`, `morse` and `fox start` are refused. Refused
+while keyed. Not persisted.
 
 ### `tone {Hz} {ms}`
 Keys, sends one tone (300–3000 Hz, 10–5000 ms) on the MIC pin, unkeys.

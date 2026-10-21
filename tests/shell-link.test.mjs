@@ -18,9 +18,9 @@ class ScriptLink extends ShellLink {
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 test('a reply whose prompt is split across chunks is assembled, and the doubled prompt is drained', async () => {
-  const l = new ScriptLink({ version: [[5, 'version\r\nfoxhunt 0.4.0 xiao-esp32c3 sa868-vhf\r\nc'], [20, 'h> '], [40, '\r\nch> ']] });
+  const l = new ScriptLink({ version: [[5, 'version\r\nfoxhunt 0.5.0 xiao-esp32c3 sa868-vhf\r\nc'], [20, 'h> '], [40, '\r\nch> ']] });
   const r = await l.command('version', { requireEcho: true, settleMs: 60 });
-  assert.equal(r.body.trim(), 'foxhunt 0.4.0 xiao-esp32c3 sa868-vhf');
+  assert.equal(r.body.trim(), 'foxhunt 0.5.0 xiao-esp32c3 sa868-vhf');
   assert.equal(l.buf.length, 0, 'nothing left over after the settle');
 });
 

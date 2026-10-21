@@ -9,7 +9,7 @@ class Boot(unittest.TestCase):
     def test_boots_in_receive_with_band_unset(self):
         sim = Sim.boot()
         banner = sim.take()
-        self.assertIn('foxhunt 0.4.0 xiao-esp32c3 sa868-unset', sim.one('version'))
+        self.assertIn('foxhunt 0.5.0 xiao-esp32c3 sa868-unset', sim.one('version'))
         self.assertTrue(sim.pin('D3').value, 'PTT must be high (receive) after boot')
         self.assertTrue(sim.pin('D4').value, 'PD high: module awake')
         self.assertTrue(sim.pin('D10').value, 'LED on: module answered')
@@ -182,7 +182,7 @@ class TransmitGates(unittest.TestCase):
         self.assertEqual(sim.one('tx arm'), 'armed')
         self.assertIn('band not set', sim.one('tx on 1'))
         sim.cmd('band vhf')
-        self.assertTrue(sim.one('tx on 61').startswith('usage:'))
+        self.assertTrue(sim.one('tx on 121').startswith('usage:'))
         sim.stop()
 
     def test_key_down_deadline_is_enforced_by_the_board(self):
@@ -310,4 +310,20 @@ class AuditRegressions(unittest.TestCase):
         self.assertIn('NOT RESPONDING', sim.kv()['module'])
         sim.module.answer = True
         self.assertIn('connected', sim.kv()['module'])
+        sim.stop()
+
+
+class MicLine(unittest.TestCase):
+    def test_line_mode_releases_d1_while_keyed_and_refuses_tones(self):
+        sim = Sim.boot(tx_enabled=True); sim.cmd('callsign w1aw'); sim.cmd('band vhf'); sim.cmd('tx arm')
+        self.assertEqual(sim.one('mic'), 'pwm')
+        self.assertEqual(sim.one('mic line'), 'line'); self.assertEqual(sim.kv()['mic'], 'line')
+        self.assertIn('line mode', sim.one('tone 800 100')); self.assertIn('line mode', sim.one('morse e')); self.assertIn('line mode', sim.one('fox start'))
+        self.assertEqual(sim.one('tx on 90'), 'on 90.0', 'SSTV-length key-down allowed')
+        self.assertNotIn('D1', sim.pins, 'D1 floats while keyed in line mode')
+        self.assertIn('keyed', sim.one('mic pwm'))
+        sim.cmd('tx off')
+        self.assertIn('D1', sim.pins); self.assertFalse(sim.pin('D1').value, 'D1 back to a low output after unkey')
+        self.assertEqual(sim.one('mic pwm'), 'pwm')
+        self.assertTrue(sim.one('tx on 121').startswith('usage:'))
         sim.stop()

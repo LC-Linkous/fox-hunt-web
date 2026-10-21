@@ -43,7 +43,7 @@ except (ImportError, AttributeError):
     NVM = None
 
 FW_NAME = "foxhunt"
-FW_VERSION = "0.4.0"
+FW_VERSION = "0.5.0"
 BOARD_NAME = "xiao-esp32c3"
 
 # ---------------------------------------------------------------- pin map
@@ -82,7 +82,7 @@ SCAN_MAX_CHANNELS = 128
 SCAN_SETTLE_MS = 60         # after a retune, before reading RSSI
 
 TX_KEY_DEFAULT_S = 10       # `tx on` with no argument
-TX_KEY_MAX_S = 60           # hard cap on any key-down
+TX_KEY_MAX_S = 120          # hard cap on any key-down (an SSTV Martin M1 frame is 114 s)
 TX_MORSE_MAX = 64           # characters per `morse`
 TX_PTT_LEAD_MS = 750        # key-up to first tone (the dc34fox value)
 
@@ -179,6 +179,7 @@ state = {
     "fox_next": 0,
     "fox_cycles": 0,
     # the SQ wire
+    "mic": "pwm",               # pwm: D1 drives the SA868 MIC with the tone generator; line: D1 is released so a sound card can drive MIC_IN
     "sq_on": nvm_read_sq(),
     "sq_level": None,           # True = carrier (pin low), updated by the main loop
     "sq_events": [],            # [(ticks_ms, 1|0)] edges since the last `events`, newest last
@@ -350,8 +351,12 @@ def tone_off():
 
 def key(seconds):
     """Drive PTT low for up to `seconds`. The main loop unkeys at the deadline."""
+    global mic
     seconds = max(0.1, min(float(seconds), TX_KEY_MAX_S))
     state["keyed_until"] = ms() + int(seconds * 1000)
+    if state["mic"] == "line" and mic is not None:
+        mic.deinit()                # hi-Z: the sound card on the MIC_IN pad is the modulation
+        mic = None
     ptt.value = False
 
 
@@ -611,6 +616,7 @@ def cmd_info(args):
     out("volume: %d" % state["volume"])
     out("rssi_cmd: %s" % state["rssi_cmd"])
     out("nvm: %s" % ("yes" if NVM else "no"))
+    out("mic: %s" % state["mic"])
     out("sq: %s" % ("on %s" % ("carrier" if state["sq_level"] else "quiet") if state["sq_on"] else "off"))
     out("ptt: %s" % ("TX keyed %.1f s left" % keyed_left_s() if keyed() else "rx"))
     out("tx: %s" % ("available" if TX_ENABLED else "disabled"))
@@ -624,7 +630,7 @@ def cmd_info(args):
 
 
 def cmd_help(args):
-    out("commands: version info help band callsign tune rssi scan squelch bw volume at rx led sq events")
+    out("commands: version info help band callsign tune rssi scan squelch bw volume at rx led sq events mic")
     if TX_ENABLED:
         out("transmit: tx arm|disarm|on [s]|off  tone {Hz} {ms}  morse {text}  power low|high  wpm {n}  foxmsg {text}  foxdelay {s}  fox start|stop")
     else:
@@ -873,6 +879,9 @@ def cmd_tx(args):
 
 def cmd_tone(args):
     """tone {Hz} {ms}: key, send one tone, unkey. For checking the audio path."""
+    if state["mic"] == "line":
+        out("error: mic is in line mode; send `mic pwm` for tones")
+        return
     if len(args) != 2:
         out("usage: tone {Hz} {ms}")
         return
@@ -898,6 +907,9 @@ def cmd_tone(args):
 
 def cmd_morse(args):
     """morse {text}: key, send the text in Morse at `wpm`, unkey."""
+    if state["mic"] == "line":
+        out("error: mic is in line mode; send `mic pwm` for Morse")
+        return
     if not args:
         out("usage: morse {text}")
         return
@@ -957,6 +969,9 @@ def cmd_fox(args):
     if w == "start":
         if tx_refuse():
             return
+        if state["mic"] == "line":
+            out("error: mic is in line mode; send `mic pwm` for the beacon")
+            return
         state["fox_running"] = True
         state["fox_cycles"] = 0
         state["fox_next"] = ms()            # first cycle right away
@@ -967,6 +982,22 @@ def cmd_fox(args):
         out("stopped %d" % state["fox_cycles"])
     else:
         out("usage: fox [start|stop]")
+
+
+def cmd_mic(args):
+    """mic -> pwm|line. mic pwm: D1 makes the tones. mic line: D1 floats while keyed; a sound card drives MIC_IN (SSTV from the page)."""
+    if not args:
+        out(state["mic"])
+        return
+    w = args[0].lower()
+    if w not in ("pwm", "line"):
+        out("usage: mic pwm|line")
+        return
+    if keyed():
+        out("error: keyed; send `tx off` first")
+        return
+    state["mic"] = w
+    out(w)
 
 
 def cmd_sq(args):
@@ -1011,6 +1042,7 @@ COMMANDS = {
     "rx": cmd_rx,
     "led": cmd_led,
     "sq": cmd_sq,
+    "mic": cmd_mic,
     "events": cmd_events,
     # transmit: all refused unless TX_ENABLED, a callsign is stored, and `tx arm` was sent
     "tx": cmd_tx,

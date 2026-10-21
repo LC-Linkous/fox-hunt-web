@@ -8,14 +8,14 @@
 // without it, every file comes from the same cached set. The firmware file
 // is fetched the same way, so the installer never flashes a previous release
 // while the network is reachable.
-const CACHE = 'fox-hunt-web-v0.9.0';
+const CACHE = 'fox-hunt-web-v0.10.0';
 const SHELL = ['./', 'index.html', 'about.html', 'pins.html', 'sw.js', 'firmware/code.py', 'PROTOCOL.md',
   'css/theme.css', 'css/layout.css', 'css/components.css', 'css/fox.css',
   'js/main.js', 'js/fmt.js', 'js/hunt.js', 'js/bearing.js',
   'js/device/shell-link.js', 'js/device/serial-link.js', 'js/device/demo-link.js', 'js/device/fox.js', 'js/device/models.js', 'js/device/installer.js',
   'js/plot/common.js', 'js/plot/palettes.js', 'js/plot/rssi.js', 'js/plot/scan.js', 'js/plot/waterfall.js', 'js/plot/audio.js', 'js/plot/polar.js',
   'js/ui/sidebar.js', 'js/ui/console.js', 'js/ui/export.js', 'js/ui/settings.js', 'js/ui/recorder.js', 'js/ui/session.js', 'js/ui/geo.js', 'js/ui/compass.js',
-  'js/audio/capture.js', 'js/audio/fft.js', 'js/audio/cw.js', 'js/audio/sstv.js'];
+  'js/audio/capture.js', 'js/audio/fft.js', 'js/audio/cw.js', 'js/audio/sstv.js', 'js/audio/playout.js', 'js/audio/quieting.js'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', e => {

@@ -36,14 +36,19 @@ after(async () => { if (browser) await browser.close(); if (server) server.close
 const ptest = (name, fn) => test(name, async t => { if (!browser) { if (process.env.REQUIRE_BROWSER) throw new Error('REQUIRE_BROWSER is set and Playwright/Chromium is not available'); return t.skip('Playwright/Chromium not available'); } await fn(t); });
 
 /** A fresh page on the simulated fox, with every console error collected. */
-async function demoPage({ viewport = { width: 1300, height: 900 }, geolocation = null } = {}) {
-  const ctx = await browser.newContext({ viewport, ...(geolocation ? { geolocation, permissions: ['geolocation'] } : {}) });
+async function demoPage({ viewport = { width: 1300, height: 900 }, geolocation = null, device = null } = {}) {
+  const ctx = await browser.newContext({ ...(device || { viewport }), ...(geolocation ? { geolocation, permissions: ['geolocation'] } : {}) });
   const page = await ctx.newPage(); const errors = [];
   page.on('pageerror', e => errors.push('pageerror: ' + e.message));
   page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
   await page.goto(base + 'index.html'); await page.waitForSelector('#demoBtn');
   await page.click('#demoBtn'); await page.waitForFunction(() => document.getElementById('statusText').textContent.includes('Simulated'));
-  const open = async sec => { const h = page.locator(`section[data-section="${sec}"] h2 button`); if (await h.getAttribute('aria-expanded') !== 'true') await h.click(); };
+  // open a sidebar section; 'setup' is the Setup page now, so that switches mode (and back to Bench on the next sidebar section)
+  const open = async sec => {
+    if (sec === 'setup') { await page.click('#modeSetup'); return; }
+    if (await page.locator('#setupPanel').isVisible()) await page.click('#modeBench');
+    const h = page.locator(`section[data-section="${sec}"] h2 button`); if (await h.getAttribute('aria-expanded') !== 'true') await h.click();
+  };
   const text = async id => (await page.locator('#' + id).innerText()).trim();
   const close = async () => { assert.deepEqual(errors, [], 'no page errors'); await ctx.close(); };
   return { page, ctx, open, text, errors, close };
@@ -55,7 +60,7 @@ ptest('loads, connects to the simulated fox, identifies it', async () => {
   assert.equal(await d.page.locator('#bandSel').inputValue(), 'dual');
   assert.equal(await d.page.locator('#tuneBtn').isDisabled(), false);
   await d.open('setup');
-  assert.equal(await d.text('fwVersion'), '0.4.0'); assert.equal(await d.text('fwNvm'), 'yes');
+  assert.equal(await d.text('fwVersion'), '0.5.0'); assert.equal(await d.text('fwNvm'), 'yes');
   await d.close();
 });
 
@@ -178,14 +183,18 @@ ptest('disconnect disables the controls; reconnect brings them back', async () =
   await d.close();
 });
 
-ptest('hunt mode on a phone: panel shown, sidebar hidden, no horizontal scroll, live works', async () => {
-  const d = await demoPage({ viewport: { width: 390, height: 800 } });
-  await d.page.click('#modeHunt');
+ptest('hunt mode on an Android phone: panel shown, sidebar hidden, no horizontal scroll, touch live works', async () => {
+  const d = await demoPage({ device: pw.devices['Pixel 7'] });
+  await d.page.tap('#modeHunt');
   assert.ok(await d.page.locator('#huntPanel').isVisible()); assert.ok(await d.page.locator('#sidebar').isHidden());
+  assert.ok(await d.page.locator('#firmwareSection').isHidden(), 'the installer is not in the hunt column');
   const over = await d.page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   assert.ok(over <= 0, `horizontal overflow ${over}px`);
-  await d.page.click('#hLiveBtn'); await d.page.waitForFunction(() => /^\d+$/.test(document.getElementById('hRssi').textContent));
-  await d.page.click('#modeBench'); assert.ok(await d.page.locator('#huntPanel').isHidden());
+  await d.page.tap('#hLiveBtn'); await d.page.waitForFunction(() => /^\d+$/.test(document.getElementById('hRssi').textContent));
+  // the heading slider stands in for a compass the phone did not offer
+  await d.page.locator('#hHeadingSlider').evaluate(el => { el.value = 90; el.dispatchEvent(new Event('input', { bubbles: true })); });
+  assert.match(await d.text('hHeading'), /90° \(manual\)/);
+  await d.page.tap('#modeBench'); assert.ok(await d.page.locator('#huntPanel').isHidden());
   await d.close();
 });
 
@@ -194,9 +203,79 @@ ptest('about page and the firmware section load without errors', async () => {
   page.on('pageerror', e => errors.push(e.message)); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
   await page.goto(base + 'about.html'); await page.waitForSelector('h1');
   await page.goto(base + 'index.html#firmwareSection'); await page.waitForSelector('#fwInstallBtn');
-  assert.match(await page.locator('#fwVersionText').innerText(), /0\.4\.0/);
+  assert.match(await page.locator('#fwVersionText').innerText(), /0\.5\.0/);
   const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#fwDownloadBtn')]);
   const text = fs.readFileSync(await dl.path(), 'utf8');
-  assert.match(text, /^TX_ENABLED = False$/m); assert.match(text, /FW_VERSION = "0\.4\.0"/);
+  assert.match(text, /^TX_ENABLED = False$/m); assert.match(text, /FW_VERSION = "0\.5\.0"/);
   assert.deepEqual(errors, []); await ctx.close();
+});
+
+// ---- the audio path, with Chromium's fake microphone playing our own encoders' output
+import os from 'node:os';
+import { buildFoxAudioWav } from './make-fixture.mjs';
+
+ptest('audio: the CW decoder reads W1AW from the sound card and the SSTV decoder draws the picture', async t => {
+  const wav = path.join(os.tmpdir(), `fox-audio-${process.pid}.wav`); const secs = buildFoxAudioWav(wav);
+  // the headless *shell* Playwright uses by default has no audio capture; full Chromium in --headless=new does
+  let b2; try { b2 = await pw.chromium.launch({ headless: false, args: ['--headless=new', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${wav}`, '--autoplay-policy=no-user-gesture-required'] }); }
+  catch (e) { fs.rmSync(wav, { force: true }); return t.skip('full Chromium not available for the fake microphone: ' + e.message.split('\n')[0]); }
+  const ctx = await b2.newContext({ permissions: ['microphone'] }); const page = await ctx.newPage(); const errors = [];
+  page.on('pageerror', e => errors.push(e.message)); page.on('console', m => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });   // full Chromium asks for a favicon
+  try {
+    await page.goto(base + 'index.html'); await page.waitForSelector('#demoBtn'); await page.click('#demoBtn'); await page.waitForFunction(() => document.getElementById('statusText').textContent.includes('Simulated'));
+    const h = page.locator('section[data-section="audio"] h2 button'); if (await h.getAttribute('aria-expanded') !== 'true') await h.click();
+    await page.check('#quietChk');
+    await page.click('#audioBtn');
+    await page.waitForFunction(() => /dBFS/.test(document.getElementById('audioLevel').textContent), null, { timeout: 10000 });
+    await page.waitForFunction(() => /W1AW/.test(document.getElementById('cwDecoded').textContent), null, { timeout: 15000 });
+    await page.waitForFunction(() => /line|image|done|decod/i.test(document.getElementById('sstvStatus').textContent), null, { timeout: 20000 });
+    await page.waitForFunction(() => /done|complete|finished/i.test(document.getElementById('sstvStatus').textContent), null, { timeout: (secs + 15) * 1000 });
+    // the picture: red on the left, green on the right
+    const px = await page.evaluate(() => { const c = document.getElementById('sstvCanvas'), g = c.getContext('2d'); const l = g.getImageData(40, 100, 1, 1).data, r = g.getImageData(280, 100, 1, 1).data; return [[...l].slice(0, 3), [...r].slice(0, 3)]; });
+    assert.ok(px[0][0] > 150 && px[0][1] < 100, `left pixel ${px[0]} should be red`); assert.ok(px[1][1] > 150 && px[1][0] < 100, `right pixel ${px[1]} should be green`);
+    assert.match(await page.locator('#quietText').innerText(), /dB/);
+    assert.deepEqual(errors, []);
+  } finally { await ctx.close(); await b2.close(); fs.rmSync(wav, { force: true }); }
+});
+
+ptest('setup page: event channels feed the presets, the board and autoseek; export/import round-trips', async () => {
+  const d = await demoPage(); await d.page.click('#modeSetup');
+  assert.ok(await d.page.locator('#setupPanel').isVisible()); assert.ok(await d.page.locator('#sidebar').isHidden()); assert.ok(await d.page.locator('#firmwareSection').isVisible());
+  await d.page.fill('#chanLabel', 'Fox A'); await d.page.fill('#chanFreq', '146.52'); await d.page.click('#chanAddBtn');
+  await d.page.click('#chanDefaultsBtn');
+  assert.equal(await d.page.locator('#chanBody tr').count(), 3);
+  await d.page.click('#chanPinAllBtn'); assert.match(await d.text('chanNote'), /3 pinned/);
+  const [dl] = await Promise.all([d.page.waitForEvent('download'), d.page.click('#chanExportBtn')]);
+  const file = await dl.path(); const o = JSON.parse(fs.readFileSync(file, 'utf8')); assert.equal(o.channels.length, 3); assert.equal(o.channels[0].f, 146.52);
+  await d.page.locator('#chanBody tr').first().locator('button').click(); assert.equal(await d.page.locator('#chanBody tr').count(), 2);
+  const [chooser] = await Promise.all([d.page.waitForEvent('filechooser'), d.page.click('#chanImportBtn')]); await chooser.setFiles(file);
+  await d.page.waitForFunction(() => document.getElementById('chanBody').querySelectorAll('tr').length === 3);
+  await d.page.click('#chanSeekBtn');
+  await d.page.click('#modeBench');
+  assert.match((await d.text('presets')).replace(/\s+/g, ' '), /146\.520 Fox A/);
+  await d.open('hunt'); assert.equal(await d.page.locator('#boardBody tr').count(), 3);
+  await d.open('scan'); assert.ok(await d.page.locator('#seekChans').isChecked());
+  await d.page.click('#seekBtn'); await d.page.waitForFunction(() => /146\.5(2|65)00 MHz/.test(document.getElementById('seekStatus').textContent), null, { timeout: 30000 });
+  await d.page.click('#seekBtn');
+  await d.close();
+});
+
+ptest('SSTV transmit: a picture keys the fox in line mode for the frame, Stop unkeys and restores mic pwm', async () => {
+  const d = await demoPage();
+  await d.page.click('#modeSetup'); await d.page.fill('#callsign', 'w1aw'); await d.page.click('#callsignBtn'); await d.page.waitForFunction(() => /W1AW stored/.test(document.getElementById('foxStatus').textContent));
+  await d.page.click('#modeBench'); await d.open('transmit');
+  await d.page.waitForFunction(() => !document.getElementById('txArm').disabled); await d.page.check('#txArm'); await d.page.waitForFunction(() => !document.getElementById('keyBtn').disabled);
+  const png = await d.page.evaluate(() => { const c = document.createElement('canvas'); c.width = 160; c.height = 120; const g = c.getContext('2d'); g.fillStyle = '#f00'; g.fillRect(0, 0, 160, 120); return c.toDataURL('image/png'); });
+  await d.page.setInputFiles('#sstvFile', { name: 't.png', mimeType: 'image/png', buffer: Buffer.from(png.split(',')[1], 'base64') });
+  await d.page.waitForFunction(() => !document.getElementById('sstvSendBtn').disabled);
+  assert.match(await d.text('sstvTxNote'), /Robot36.*about 3[5-9] s/);
+  await d.page.click('#sstvSendBtn');
+  await d.page.waitForFunction(() => /keyed/.test(document.getElementById('txState').textContent), null, { timeout: 5000 });
+  const log = await d.page.locator('#log').innerText();
+  assert.match(log, /> mic line/); assert.match(log, /> tx on 3[5-9](\.\d+)?/);
+  await d.page.click('#sstvStopBtn');
+  await d.page.waitForFunction(() => document.getElementById('txState').textContent === 'armed', null, { timeout: 5000 }).catch(async () => { throw new Error('after stop: note=' + await d.text('sstvTxNote') + ' state=' + await d.text('txState') + ' log tail=' + (await d.page.locator('#log').innerText()).slice(-300)); });
+  assert.match(await d.page.locator('#log').innerText(), /> mic pwm/);
+  assert.equal(await d.text('sstvTxNote'), 'stopped');
+  await d.close();
 });
