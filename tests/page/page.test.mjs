@@ -46,7 +46,9 @@ async function demoPage({ viewport = { width: 1300, height: 900 }, geolocation =
   // open a sidebar section; 'setup' is the Setup page now, so that switches mode (and back to Bench on the next sidebar section)
   const open = async sec => {
     if (sec === 'setup') { await page.click('#modeSetup'); return; }
-    if (await page.locator('#setupPanel').isVisible()) await page.click('#modeBench');
+    if (sec === 'transmit') { await page.click('#modeTx'); return; }
+    if (sec === 'hunt') { await page.click('#modeHunt'); return; }
+    if (await page.evaluate(() => document.body.classList.contains('setup') || document.body.classList.contains('tx') || document.body.classList.contains('hunt'))) await page.click('#modeBench');
     const h = page.locator(`section[data-section="${sec}"] h2 button`); if (await h.getAttribute('aria-expanded') !== 'true') await h.click();
   };
   const text = async id => (await page.locator('#' + id).innerText()).trim();
@@ -57,7 +59,7 @@ async function demoPage({ viewport = { width: 1300, height: 900 }, geolocation =
 ptest('loads, connects to the simulated fox, identifies it', async () => {
   const d = await demoPage();
   assert.match(await d.text('statusText'), /Simulated · SA868 dual-band/);
-  assert.equal(await d.page.locator('#bandSel').inputValue(), 'dual');
+  await d.open('setup'); assert.equal(await d.page.locator('#bandSel').inputValue(), 'dual'); await d.page.click('#modeBench');
   assert.equal(await d.page.locator('#tuneBtn').isDisabled(), false);
   await d.open('setup');
   assert.equal(await d.text('fwVersion'), '0.5.0'); assert.equal(await d.text('fwNvm'), 'yes');
@@ -105,9 +107,9 @@ ptest('autoseek stops on the keyed fox and pins it', async () => {
 
 ptest('bearing capture with the heading slider finds the fox to the ENE', async () => {
   const d = await demoPage(); await d.open('receiver'); await d.page.click('#liveBtn'); await d.open('hunt');
-  const slider = d.page.locator('#headingSlider');
+  const slider = d.page.locator('#hHeadingSlider');
   await slider.evaluate(el => { el.value = 0; el.dispatchEvent(new Event('input', { bubbles: true })); });
-  const btn = d.page.locator('#captureBtn'); const box = await btn.boundingBox();
+  const btn = d.page.locator('#hCaptureBtn'); await btn.scrollIntoViewIfNeeded(); const box = await btn.boundingBox();
   await d.page.mouse.move(box.x + 10, box.y + 10); await d.page.mouse.down();
   for (let h = 0; h <= 360; h += 15) { await slider.evaluate((el, v) => { el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); }, h); await d.page.waitForTimeout(350); }
   await d.page.mouse.up();
@@ -170,6 +172,12 @@ ptest('transmit on the receiver fox: arming needs a callsign; the receiver pause
   await d.open('transmit'); await d.page.waitForFunction(() => !document.getElementById('txArm').disabled);
   await d.page.check('#txArm'); await d.page.waitForFunction(() => !document.getElementById('keyBtn').disabled);
   await d.page.click('#toneBtn'); await d.page.waitForFunction(() => /sent 800 Hz/.test(document.getElementById('txStatus').textContent), null, { timeout: 5000 });
+  // the TX tag is on every tab while a beacon runs, and clicking it returns to Transmit
+  await d.page.fill('#foxDelay', '5'); await d.page.click('#foxBtn'); await d.page.waitForFunction(() => !document.getElementById('txBadge').hidden);
+  assert.match(await d.text('txBadge'), /beacon on 146\.5650/);
+  await d.page.click('#modeBench'); assert.ok(await d.page.locator('#txBadge').isVisible(), 'tag stays on the bench');
+  await d.page.click('#txBadge'); assert.ok(await d.page.locator('#txPanel').isVisible());
+  await d.page.click('#foxBtn'); await d.page.waitForFunction(() => document.getElementById('txBadge').hidden);
   await d.page.uncheck('#txArm'); await d.page.waitForFunction(() => document.getElementById('keyBtn').disabled);
   await d.close();
 });
@@ -270,6 +278,8 @@ ptest('setup page: event channels feed the presets, the board and autoseek; expo
   const [chooser] = await Promise.all([d.page.waitForEvent('filechooser'), d.page.click('#chanImportBtn')]); await chooser.setFiles(file);
   await d.page.waitForFunction(() => document.getElementById('chanBody').querySelectorAll('tr').length === 3);
   await d.page.click('#chanSeekBtn');
+  await d.page.click('#modeHunt'); assert.equal(await d.page.locator('#hChannels button').count(), 3);
+  await d.page.locator('#hChannels button').first().click(); await d.page.waitForFunction(() => document.getElementById('hFreq').textContent.startsWith('146.5200'));
   await d.page.click('#modeBench');
   assert.match((await d.text('presets')).replace(/\s+/g, ' '), /146\.520 Fox A/);
   await d.open('hunt'); assert.equal(await d.page.locator('#boardBody tr').count(), 3);

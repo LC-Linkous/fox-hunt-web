@@ -124,3 +124,26 @@ table.chans th:first-child, table.chans td:first-child { text-align: left; }
 @media (max-width: 480px) { .topbar label .suffix { display: none; } .topbar #bandSel { max-width: 46vw; } }
 .cw-log { font-family: var(--mono); font-size: .8rem; color: var(--ink-2); max-height: 140px; overflow: auto; margin-top: 6px; }
 .cw-log div b { color: var(--maxhold); font-weight: 700; }
+
+/* the Transmit tab */
+body.tx .sidebar, body.tx .sidebar-handle, body.tx .firmware { display: none !important; }
+body.tx .app { grid-template-columns: 1fr; }
+body.tx .plot-area .window:not(:first-child) { display: none; }   /* only Signal strength while transmitting */
+.txpanel { max-width: 1100px; width: 100%; margin: 0 auto; padding: 10px 12px 0; display: flex; flex-direction: column; gap: 10px; }
+.tx-strip { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: var(--radius); background: var(--panel); border: 1px solid var(--edge); font-weight: 600; }
+.tx-light { width: 14px; height: 14px; border-radius: 50%; background: var(--held); flex: none; }
+.tx-light.armed { background: var(--warn); }
+.tx-light.on { background: var(--err); box-shadow: 0 0 10px var(--err); animation: txblink 1s steps(2) infinite; }
+@keyframes txblink { 50% { opacity: .35; } }
+/* the TX tag: a button that looks like the badge, loud when something is on the air */
+#txBadge { cursor: pointer; border: 0; font: inherit; }
+body.on-air #txBadge { background: var(--err); color: #fff; animation: txblink 1.2s steps(2) infinite; }
+/* the hunt page's channel strip and the full board/bearing blocks it absorbed */
+.hunt-channels { display: flex; flex-wrap: wrap; gap: 6px; }
+.hunt-channels .btn { flex: 1 1 110px; padding: 8px 6px; line-height: 1.15; }
+.hunt-channels .btn b { font-family: var(--mono); font-size: 1.05rem; }
+.hunt-channels .btn span { font-size: .78rem; color: var(--ink-2); }
+.hunt-channels .btn.running span { color: inherit; }
+.hunt-bearing h2, .hunt-board h2 { font-size: 1rem; margin: 0 0 6px; }
+/* the Board view inside the Channels window */
+.window-board { position: absolute; inset: 0; overflow: auto; padding: 6px; }

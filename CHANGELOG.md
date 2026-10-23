@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.13.0 — four tabs
+
+- **Transmit is a tab**, beside Bench, Hunt and Setup: this fox, a second
+  fox as the beacon, SSTV pictures, with a status strip (disarmed / armed
+  / ON THE AIR) and the Signal strength window and console still visible.
+  Nothing on the Bench tab can key a fox. A red **TX** tag in the top bar
+  shows what is on the air from every tab and clicks through to Transmit;
+  switching tabs never stops a transmission.
+- **Hunt tab absorbs the Hunt section**: bearings taken (table, fix,
+  copy), the full board (with a Pin-by-frequency box and sparklines), plus
+  a **channel strip** of the event channels as tap targets and a **Rec**
+  button. The bench's Channels window gets a **Board** view in place of
+  the bearing plot (a slider-driven bearing on a laptop is a number without
+  meaning).
+- **Module band moves to Setup → This fox**; the top bar is name, Connect,
+  simulation, the four tabs, status.
+- Bench sidebar: Receiver, Scan & seek, Audio, Session.
+- Fixed: the "RX only" badge showed on transmit-capable foxes.
+
 ## v0.12.0 — record and replay audio, decoded log, steadier CW
 
 - **Record audio** (Audio section): what the sound card hears, to a WAV

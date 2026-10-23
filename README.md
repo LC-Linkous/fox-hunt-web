@@ -79,14 +79,20 @@ ESP32 passes commands and answers between USB and the module's UART.
   firmware involved. The firmware's `volume` setting is that pad's level.
   See [Audio](#audio).
 
-## What it does (v0.10)
+## What it does (v0.13)
 
-The sidebar is six sections, in the order a hunt uses them: **Receiver**,
-**Scan & seek**, **Hunt** (bearing and the hunt board), **Audio**, **Session**
-(recording, location, replay, pictures and CSV) and **Transmit** (this fox,
-a second fox as the beacon, SSTV). The top bar switches between **Bench**
-(all of it), **Hunt** (one column for a phone) and **Setup** (the event's
-channels, this fox, this page, the firmware — set once).
+Four tabs in the top bar: **Bench** (the sidebar — Receiver, Scan & seek,
+Audio, Session — with the Signal strength, Channels and Audio windows and
+the console), **Hunt** (one column for a phone: channel strip, RSSI and
+countdown, Seek/Pin/Rec, the plot, bearing capture and the bearings
+taken, the board, audio), **Transmit** (this fox, a second fox as the
+beacon, SSTV pictures; the Signal strength window and the console stay
+visible) and **Setup** (the event's channels, this fox — module band,
+callsign, wires — this page, the firmware installer). Transmit is its own
+tab so nothing on the bench can key a fox by accident; a red **TX** tag in
+the top bar shows what is on the air from any tab, and clicking it goes to
+Transmit. Nothing stops a transmission when you switch tabs — a beacon
+keeps running while you show the bench.
 
 
 - **Connect / detect** — reads `version` and `info`, refuses a port that is not

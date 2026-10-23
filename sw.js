@@ -8,7 +8,7 @@
 // without it, every file comes from the same cached set. The firmware file
 // is fetched the same way, so the installer never flashes a previous release
 // while the network is reachable.
-const CACHE = 'fox-hunt-web-v0.12.0';
+const CACHE = 'fox-hunt-web-v0.13.0';
 const SHELL = ['./', 'index.html', 'about.html', 'pins.html', 'sw.js', 'firmware/code.py', 'PROTOCOL.md',
   'css/theme.css', 'css/layout.css', 'css/components.css', 'css/fox.css',
   'js/main.js', 'js/fmt.js', 'js/hunt.js', 'js/bearing.js',

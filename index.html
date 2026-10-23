@@ -23,22 +23,15 @@
   <h1>fox-hunt-web</h1>
   <button class="btn primary" id="connectBtn">Connect to fox</button>
   <button class="btn" id="demoBtn" aria-pressed="false">Try without hardware</button>
-  <label class="row" style="gap:6px"><span class="suffix">Module</span>
-    <select id="bandSel" aria-label="SA868 band fitted" title="Which SA868 is on the board. Sent to the fox once and kept in its NVM.">
-      <option value="auto">From the fox</option>
-      <option value="vhf">SA868 VHF (2 m)</option>
-      <option value="uhf">SA868 UHF (70 cm)</option>
-      <option value="dual">SA868 dual-band</option>
-    </select>
-  </label>
   <div class="views mode-tabs" role="group" aria-label="Layout">
     <button class="btn small" id="modeBench"  aria-pressed="true" title="Every section and window">Bench</button>
     <button class="btn small" id="modeHunt"  aria-pressed="false" title="One column: readout, countdown, board. For a phone and a yagi.">Hunt</button>
+    <button class="btn small" id="modeTx" aria-pressed="false" title="Keying, Morse, the beacon, a second fox as beacon, SSTV pictures. Needs the transmit build and a license.">Transmit</button>
     <button class="btn small" id="modeSetup" aria-pressed="false" title="Set once: the event's channels, this fox, this page, the firmware.">Setup</button>
   </div>
   <span class="status" id="status"><span class="dot"></span><span id="statusText">Not connected</span></span>
   <span class="badge" id="rxBadge" hidden title="PTT is held high by the firmware; this build cannot transmit">RX only</span>
-  <span class="badge tx" id="txBadge" hidden>● TX</span>
+  <button class="badge tx" id="txBadge" hidden title="A fox is transmitting. Click for the Transmit tab.">● TX</button>
   <span class="badge rec" id="recBadge" hidden>● REC</span>
   <span class="badge" id="geoBadge" hidden title="Location stamping is on">⌖ GPS</span>
   <span class="badge warn" id="replayBadge" hidden title="Showing a loaded session, not the fox">▶ REPLAY</span>
@@ -123,28 +116,6 @@
         <div class="tools"><button class="btn small" id="seekSkipBtn" disabled title="Move on now">Skip</button><button class="btn small" id="seekLockBtn" disabled aria-pressed="false" title="Stay on this channel until unlocked">Lock</button><span class="hint" id="seekStatus" style="align-self:center"></span></div>
       </div>
     </section>
-    <section data-section="hunt">
-      <h2><button type="button" aria-expanded="false">Hunt</button></h2>
-      <div class="body">
-        <span class="label group">Bearing</span>
-        <p class="hint" style="margin:0 0 8px">With a directional antenna: start the receiver, hold <em>Capture</em>, turn through a full circle, release. RSSI against heading is plotted and the lobe's centre is the bearing. Two captures from two places, both with location on, give a fix.</p>
-        <div class="field"><span class="label">Heading source</span>
-          <div class="tools"><button class="btn small" id="compassBtn" aria-pressed="false">Use the compass</button><button class="btn small" id="northBtn" title="I'm pointing north now: calibrates a relative sensor, trims an absolute one">Mark north</button></div>
-          <dl class="kv"><dt>Compass</dt><dd id="compassText">off</dd><dt>Heading</dt><dd id="headingText">—</dd></dl>
-          <label for="headingSlider" class="label" style="margin-top:6px">Manual heading (no compass, or on a laptop)</label>
-          <input type="range" id="headingSlider" min="0" max="359" value="0" style="width:100%"><p class="hint">Used whenever the compass has no heading. Turn the antenna and drag to match; on a bench, drag to "turn" the simulated yagi.</p></div>
-        <div class="stack"><button class="btn primary block" id="captureBtn" disabled aria-pressed="false">Hold to capture</button></div>
-        <p class="hint" id="captureStatus"></p>
-        <div class="markers-wrap" style="margin-top:8px"><table class="markers bearings" id="bearingTable"><thead><tr><th>When</th><th>MHz</th><th>Bearing</th><th>Width</th><th>Where</th><th></th></tr></thead><tbody id="bearingBody"></tbody></table><p class="hint" id="bearingEmpty">No captures yet.</p></div>
-        <dl class="kv"><dt>Fix</dt><dd id="fixText">needs two captures with location from different places</dd></dl>
-        <div class="tools"><button class="btn small" id="fixCopyBtn" disabled>Copy fix</button><button class="btn small" id="bearingClearBtn">Clear captures</button></div>
-        <span class="label group" style="margin-top:14px">Hunt board</span>
-        <p class="hint" style="margin:0 0 8px">The foxes in play. Pin a frequency here, from the receiver, from a scan, or let autoseek do it; each one keeps its own last-heard time, max, cycle timing and ID. Saved with the session.</p>
-        <div class="row"><input type="number" id="boardFreq" placeholder="MHz" step="0.0125" style="width:100%"><button class="btn small" id="boardAddBtn">Pin</button></div>
-        <div class="markers-wrap" style="margin-top:8px"><table class="markers board" id="boardTable"><thead><tr><th>MHz</th><th>ID</th><th>Heard</th><th>Max</th><th>Next</th><th>Trend</th><th></th></tr></thead><tbody id="boardBody"></tbody></table><p class="hint" id="boardEmpty">Nothing pinned yet.</p></div>
-        <div class="tools" style="margin-top:6px"><button class="btn small" id="boardClearBtn">Clear board</button></div>
-      </div>
-    </section>
     <section data-section="audio">
       <h2><button type="button" aria-expanded="false">Audio</button></h2>
       <div class="body">
@@ -220,10 +191,17 @@
         </div>
       </div>
     </section>
-    <section data-section="transmit" id="txSection">
-      <h2><button type="button" aria-expanded="false">Transmit</button></h2>
-      <div class="body">
-        <span class="label group">This fox</span>
+  </aside>
+  <div class="sidebar-handle" id="sidebarHandle" title="Drag to resize the sidebar"></div>
+
+  <!-- ================================================================ main -->
+  <main class="main">
+    <section class="txpanel" id="txPanel" hidden aria-label="Transmit">
+      <div class="tx-strip" id="txStrip"><span class="tx-light" id="txLight"></span><span id="txStripText">not connected</span></div>
+      <p class="hint" style="margin:0">Nothing here keys until a callsign is stored (Setup) and the session is armed. Every key-down has a deadline the board enforces itself. A license is required. The simulated fox follows exactly the same rules.</p>
+      <div class="setup-grid">
+        <div class="setup-card" id="txCardThis">
+          <h2>This fox</h2>
         <p class="hint" id="txDisabledNote">This fox is running the receive-only build, so nothing here can key it. To transmit, install the firmware again from the <a href="#firmwareSection">Firmware</a> section with <em>Transmit commands</em> ticked. The board still boots in receive and refuses to key until a callsign is stored and this section is armed. A license is required.</p>
         <div id="txControls" hidden>
           <label class="field" style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" id="txArm" style="margin-top:3px"><span>I hold an amateur radio license, the callsign below is mine or my event's, and an antenna or dummy load is on the RF port. <span class="hint">Sends <code>tx arm</code>; arming lasts until disconnect or reboot.</span></span></label>
@@ -267,7 +245,9 @@
           <p class="hint" id="sstvTxOff" hidden>SSTV transmit needs a sound card wired to MIC_IN: tick it under Setup → Wires on this fox once it is.</p>
         </div>
         <p class="hint" id="txStatus"></p>
-        <span class="label group" style="margin-top:14px">A second fox as the beacon</span>
+        </div>
+        <div class="setup-card" id="txCardPair">
+          <h2>A second fox as the beacon</h2>
         <p class="hint" style="margin:0 0 8px">A second fox on another USB port is the <b>beacon</b>; the one connected above stays the <b>receiver</b> with everything on this page. Both on dummy loads, a few feet apart. Verifies a fox's TX, the cycle timing, autoseek and the decoders without going outside.</p>
         <div class="tools"><button class="btn" id="pairBtn">Pair a second fox</button><span class="hint" id="pairStatus" style="align-self:center">not paired</span></div>
         <div id="pairControls" hidden>
@@ -290,13 +270,9 @@
           <div class="stack"><button class="btn block" id="pairDropBtn">Unpair</button></div>
         </div>
         <p class="hint" id="pairNote"></p>
+        </div>
       </div>
     </section>
-  </aside>
-  <div class="sidebar-handle" id="sidebarHandle" title="Drag to resize the sidebar"></div>
-
-  <!-- ================================================================ main -->
-  <main class="main">
     <section class="setup" id="setupPanel" hidden aria-label="Setup">
       <p class="hint" style="margin:0">Things set once and then left alone. Everything here is remembered — the fox's own settings on the board, the rest in this browser.</p>
       <div class="setup-grid">
@@ -316,6 +292,14 @@
         </div>
         <div class="setup-card">
           <h2>This fox</h2>
+          <div class="field"><label for="bandSel">SA868 module fitted</label>
+    <select id="bandSel" aria-label="SA868 band fitted" title="Which SA868 is on the board. Sent to the fox once and kept in its NVM.">
+      <option value="auto">From the fox</option>
+      <option value="vhf">SA868 VHF (2 m)</option>
+      <option value="uhf">SA868 UHF (70 cm)</option>
+      <option value="dual">SA868 dual-band</option>
+    </select>
+              <p class="hint">Which SA868 is on this fox: VHF, UHF or dual-band. Sent to the fox once and kept in its NVM; the tunable range follows it.</p></div>
         <p class="hint" style="margin:0 0 8px">Settings kept on the board, in the ESP32's NVM. They survive reboots and re-saving <code>code.py</code>.</p>
         <dl class="kv">
           <dt>Firmware</dt><dd id="fwVersion">—</dd>
@@ -373,6 +357,7 @@
           <li><b>Pin what you find.</b> The hunt board keeps each fox's channel, ID, last-heard time and cycle. Audio from a sound card decodes the fox's Morse ID into the board.</li>
         </ol>
       </div>
+      <div class="hunt-channels" id="hChannels" hidden></div>
       <div class="hunt-top">
         <div class="hunt-tile"><div class="lbl">RSSI</div><div class="huge" id="hRssi">—</div><div class="sub" id="hFreq">not connected</div></div>
         <div class="hunt-tile"><div class="lbl">Next burst</div><div class="huge" id="hCountdown">—</div><div class="sub" id="hCycle">listen on a channel to learn the fox's cycle</div></div>
@@ -383,6 +368,7 @@
         <button class="btn" id="hSkipBtn" disabled>Skip</button>
         <button class="btn" id="hLockBtn" disabled aria-pressed="false">Lock</button>
         <button class="btn" id="hPinBtn" disabled>Pin</button>
+        <button class="btn" id="hRecBtn" aria-pressed="false" title="Record readings and scans (Session)">Rec</button>
         <select id="hAtten" aria-label="Attenuator in line" title="Attenuator in line (bookkeeping)"><option value="0">no atten</option><option value="3">3 dB</option><option value="6">6 dB</option><option value="10">10 dB</option><option value="20">20 dB</option><option value="30">30 dB</option><option value="40">40 dB</option></select>
       </div>
       <p class="hint" id="hActionsHelp"><b>Start receiver</b> listens on the tuned channel · <b>Seek</b> steps the channels and stops on a signal · <b>Skip</b> moves on · <b>Lock</b> stays put · <b>Pin</b> puts this channel on the board · the attenuator is bookkeeping for what's in the coax.</p>
@@ -395,9 +381,32 @@
         <input type="range" id="hHeadingSlider" aria-label="Heading" min="0" max="359" value="0" style="width:100%" title="Manual heading">
         <p class="hint" id="hBearingText">Hold Capture, turn a full circle, release.</p>
       </div>
+      <div class="hunt-bearing">
+        <h2>Bearings taken</h2>
+        <div hidden>
+        <p class="hint" style="margin:0 0 8px">With a directional antenna: start the receiver, hold <em>Capture</em>, turn through a full circle, release. RSSI against heading is plotted and the lobe's centre is the bearing. Two captures from two places, both with location on, give a fix.</p>
+        <div class="field"><span class="label">Heading source</span>
+          <div class="tools"><button class="btn small" id="compassBtn" aria-pressed="false">Use the compass</button><button class="btn small" id="northBtn" title="I'm pointing north now: calibrates a relative sensor, trims an absolute one">Mark north</button></div>
+          <dl class="kv"><dt>Compass</dt><dd id="compassText">off</dd><dt>Heading</dt><dd id="headingText">—</dd></dl>
+          <label for="headingSlider" class="label" style="margin-top:6px">Manual heading (no compass, or on a laptop)</label>
+          <input type="range" id="headingSlider" min="0" max="359" value="0" style="width:100%"><p class="hint">Used whenever the compass has no heading. Turn the antenna and drag to match; on a bench, drag to "turn" the simulated yagi.</p></div>
+        <div class="stack"><button class="btn primary block" id="captureBtn" disabled aria-pressed="false">Hold to capture</button></div>
+        <p class="hint" id="captureStatus"></p>
+        </div>
+        <div class="markers-wrap" style="margin-top:8px"><table class="markers bearings" id="bearingTable"><thead><tr><th>When</th><th>MHz</th><th>Bearing</th><th>Width</th><th>Where</th><th></th></tr></thead><tbody id="bearingBody"></tbody></table><p class="hint" id="bearingEmpty">No captures yet.</p></div>
+        <dl class="kv"><dt>Fix</dt><dd id="fixText">needs two captures with location from different places</dd></dl>
+        <div class="tools"><button class="btn small" id="fixCopyBtn" disabled>Copy fix</button><button class="btn small" id="bearingClearBtn">Clear captures</button></div>
+      </div>
       <div class="hunt-board">
-        <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:6px"><h2>Hunt board</h2><span class="row" style="gap:6px"><button class="btn small" id="hAudioBtn" aria-pressed="false">Audio off</button><button class="btn small" id="hListenBtn" aria-pressed="false" title="Hear the captured audio on this phone">Listen</button></span></div>
-        <div class="markers-wrap"><table class="markers board"><thead><tr><th>MHz</th><th>ID</th><th>Heard</th><th>Max</th><th>Next</th><th>Trend</th><th></th></tr></thead><tbody id="hBoardBody"></tbody></table><p class="hint" id="hBoardEmpty">Nothing pinned yet. Pin the tuned channel, or Seek.</p></div>
+        <h2>Board</h2>
+        <p class="hint" style="margin:0 0 8px">The foxes in play. Pin a frequency here, from the receiver, from a scan, or let autoseek do it; each one keeps its own last-heard time, max, cycle timing and ID. Saved with the session.</p>
+        <div class="row"><input type="number" id="boardFreq" placeholder="MHz" step="0.0125" style="width:100%"><button class="btn small" id="boardAddBtn">Pin</button></div>
+        <div class="markers-wrap" style="margin-top:8px"><table class="markers board" id="boardTable"><thead><tr><th>MHz</th><th>ID</th><th>Heard</th><th>Max</th><th>Next</th><th>Trend</th><th></th></tr></thead><tbody id="boardBody"></tbody></table><p class="hint" id="boardEmpty">Nothing pinned yet.</p></div>
+        <div class="tools" style="margin-top:6px"><button class="btn small" id="boardClearBtn">Clear board</button></div>
+      </div>
+      <div class="hunt-board">
+        <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:6px"><h2>Audio</h2><span class="row" style="gap:6px"><button class="btn small" id="hAudioBtn" aria-pressed="false">Audio off</button><button class="btn small" id="hListenBtn" aria-pressed="false" title="Hear the captured audio on this phone">Listen</button></span></div>
+        <div class="markers-wrap" hidden><table class="markers board"><tbody id="hBoardBody"></tbody></table><p id="hBoardEmpty" hidden></p></div>
         <div class="cw-decoded small" id="hCwText"></div>
       </div>
     </section>
@@ -412,10 +421,11 @@
             <div class="views" role="group" aria-label="Channels view">
               <button class="btn small" data-scan-view="bars" aria-pressed="true">Bars</button>
               <button class="btn small" data-scan-view="waterfall" aria-pressed="false" title="One row per scan; scan continuously to build it">Waterfall</button>
-              <button class="btn small" data-scan-view="bearing" aria-pressed="false" title="RSSI against heading from a bearing capture (Hunt section)">Bearing</button>
+              <button class="btn small" data-scan-view="board" aria-pressed="false" title="The hunt board: every pinned fox, its ID, last heard, cycle">Board</button>
             </div>
             <span class="hint" id="scanHead">RSSI per channel</span></div>
-          <div class="chart-wrap"><canvas id="scanCanvas"></canvas><div class="tip" id="scanTip"></div></div>
+          <div class="chart-wrap"><canvas id="scanCanvas"></canvas><div class="tip" id="scanTip"></div>
+            <div class="window-board" id="wBoard" hidden><table class="markers board"><thead><tr><th>MHz</th><th>ID</th><th>Heard</th><th>Max</th><th>Next</th><th>Trend</th><th></th></tr></thead><tbody id="wBoardBody"></tbody></table><p class="hint" id="wBoardEmpty">Nothing pinned yet: Pin from the Receiver, Pin strongest after a scan, or let autoseek do it.</p></div></div>
         </div>
         <div class="window wide">
           <div class="window-head"><h2>Audio</h2>
@@ -483,7 +493,7 @@
 
 <footer>
   fox-hunt-web <span id="appVersion"></span> · Last updated <time id="updated" datetime="2026-10-20">2026-10-20</time> · Works in Chrome and Edge via Web Serial; audio decoding works in any browser. Page <a href="https://github.com/LC-Linkous/fox-hunt-web/blob/main/LICENSE">GPL-2.0</a>, firmware GPL-3.0.
-  Maintained by <a href="https://github.com/LC-Linkous">LC Linkous</a>. For the <a href="https://github.com/HamRadioVillage/dc34fox">Ham Radio Village DC34 fox</a>; not affiliated with the Village, NiceRF, or Seeed. No license is needed to listen; one is needed to transmit, and the firmware ships with transmit disabled.
+  Maintained by <a href="https://github.com/LC-Linkous">LC Linkous</a>. For the <a href="https://github.com/HamRadioVillage/dc34fox">Ham Radio Village DC34 fox</a>; not affiliated with NiceRF or Seeed. No license is needed to listen; one is needed to transmit, and the firmware ships with transmit disabled.
   <span class="fw"><b>Firmware:</b> <a href="#firmwareSection">install from this page</a>, or download <a id="fwLink" href="firmware/code.py" download="code.py">code.py</a> (firmware <span id="fwNeed">0.5.0</span>). Also on the <a href="https://github.com/LC-Linkous/fox-hunt-web/releases/latest">latest release</a>. Runs locally too: serve the folder and open it (<a href="about.html#local">how</a>).</span>
 </footer>
 
