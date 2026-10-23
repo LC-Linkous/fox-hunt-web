@@ -38,12 +38,12 @@
 <h2>What works where</h2>
 <p>Connecting to a fox uses Web Serial, which only some browsers have. Everything else runs anywhere.</p>
 <table>
-<tr><th>Device</th><th>Connect to a fox</th><th>Audio decoders</th><th>Compass (bearing)</th><th>Location stamps</th></tr>
-<tr><td>Laptop or desktop · Chrome, Edge</td><td class="yes">yes</td><td class="yes">yes</td><td class="no">no compass</td><td class="part">coarse (Wi-Fi)</td></tr>
-<tr><td>Android phone or tablet · Chrome, with a USB-OTG cable</td><td class="yes">yes</td><td class="yes">yes (cable to the mic jack, or a USB sound card through an OTG hub)</td><td class="yes">yes</td><td class="yes">GPS</td></tr>
-<tr><td>ChromeOS</td><td class="yes">yes</td><td class="yes">yes</td><td class="part">usually not</td><td class="part">varies</td></tr>
-<tr><td>iPhone or iPad · Safari (Apple allows no other engine)</td><td class="no">no — Web Serial does not exist on iOS</td><td class="yes">yes</td><td class="part">after a permission tap</td><td class="yes">GPS</td></tr>
-<tr><td>Firefox, any platform</td><td class="no">no</td><td class="yes">yes</td><td class="part">varies</td><td class="part">varies</td></tr>
+<tr><th>Device</th><th>Connect to a fox</th><th>Audio in (decoders, listen)</th><th>Audio out (SSTV send)</th><th>Compass (bearing)</th><th>Location stamps</th></tr>
+<tr><td>Laptop or desktop · Chrome, Edge</td><td class="yes">yes</td><td class="yes">yes</td><td class="yes">yes, with an output device choice</td><td class="no">no compass</td><td class="part">coarse (Wi-Fi)</td></tr>
+<tr><td>Android phone or tablet · Chrome, with a USB-OTG cable</td><td class="yes">yes</td><td class="yes">yes (a USB sound card through an OTG hub beside the fox; listen on the phone speaker)</td><td class="yes">yes, through the same sound card</td><td class="yes">yes</td><td class="yes">GPS</td></tr>
+<tr><td>ChromeOS</td><td class="yes">yes</td><td class="yes">yes</td><td class="yes">yes</td><td class="part">usually not</td><td class="part">varies</td></tr>
+<tr><td>iPhone or iPad · Safari (Apple allows no other engine)</td><td class="no">no — Web Serial does not exist on iOS</td><td class="yes">yes</td><td class="no">no fox to key</td><td class="part">after a permission tap</td><td class="yes">GPS</td></tr>
+<tr><td>Firefox, any platform</td><td class="no">no</td><td class="yes">yes</td><td class="no">no fox to key</td><td class="part">varies</td><td class="part">varies</td></tr>
 </table>
 <p>The simulated fox (<em>Try without hardware</em>) and session replay work in every browser, so the page can be shown or a hunt reviewed on anything.</p>
 
@@ -56,6 +56,8 @@
 <li>The audio decoders do not use the fox's microcontroller at all: a wire from the SA868's <code>AF_OUT</code> pad to a sound card gives the page the audio. See the README for the wiring.</li>
 <li>A second optional wire, from the SA868's <code>SQ</code> pad to <code>D2</code>, lets the firmware (0.4.0+) time carrier edges itself; the page's burst countdown then comes from those. It is off until declared on the page, so a fox without the wire never reads the pin.</li>
 <li>Two foxes on two USB ports make a <em>bench pair</em>: one receives on the page, the other runs as the beacon, both on dummy loads.</li>
+<li>The page has three layouts: <em>Bench</em> (every section and window), <em>Hunt</em> (one column for a phone and a yagi, with a what-to-do-now line), and <em>Setup</em> (the event's channels, this fox's stored settings and wires, this page's settings, the firmware installer — set once).</li>
+<li>Audio is optional and layered: nothing over USB needs it; a sound card on the fox's <code>AF_OUT</code> adds the decoders, noise quieting and a <em>Listen</em> output; a sound card into <code>MIC_IN</code> adds SSTV pictures from the fox. Any other radio's headphone jack feeds the decoders too. See the README's <em>Which wire does what</em>.</li>
 </ul>
 
 <h2>What the page keeps, and what it asks for</h2>
@@ -75,7 +77,7 @@
 </ul>
 
 <h2>Credits and licenses</h2>
-<p>The page (<code>index.html</code>, <code>js/</code>, <code>css/</code>) is GPL-2.0-only and shares its console framing and page kit, byte for byte, with <a href="https://github.com/LC-Linkous/tinysa-web">tinysa-web</a> and <a href="https://github.com/LC-Linkous/nanovna-web">nanovna-web</a>. The firmware (<code>firmware/code.py</code>) is GPL-3.0-only and is written to the dc34fox board, whose attribution chain is <a href="https://github.com/HamRadioVillage/dc34fox">HamRadioVillage/dc34fox</a> ← <a href="https://github.com/c0ldbru/fox">c0ldbru/fox</a> ← Bradan Lane STUDIO ← <a href="https://github.com/N8HR/YAFB">N8HR/YAFB</a>. Not affiliated with NiceRF or Seeed.</p>
+<p>The page (<code>index.html</code>, <code>js/</code>, <code>css/</code>) is GPL-2.0-only and began from the page kit of <a href="https://github.com/LC-Linkous/tinysa-web">tinysa-web</a> and <a href="https://github.com/LC-Linkous/nanovna-web">nanovna-web</a> (console framing, sidebar, plot base). The firmware (<code>firmware/code.py</code>) is GPL-3.0-only and is written to the dc34fox board, whose attribution chain is <a href="https://github.com/HamRadioVillage/dc34fox">HamRadioVillage/dc34fox</a> ← <a href="https://github.com/c0ldbru/fox">c0ldbru/fox</a> ← Bradan Lane STUDIO ← <a href="https://github.com/N8HR/YAFB">N8HR/YAFB</a>. Not affiliated with NiceRF or Seeed.</p>
 <p>Maintained by <a href="https://github.com/LC-Linkous">LC Linkous</a>. Issues and hunt-day oddities: <a href="https://github.com/LC-Linkous/fox-hunt-web/issues">the tracker</a>.</p>
 </main>
 </body>

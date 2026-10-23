@@ -40,10 +40,10 @@ short version:
 - `js/main.js` — state and wiring. Nothing else touches the DOM by id.
 
 `shell-link.js`, `js/ui/sidebar.js`, `js/ui/console.js`, `js/ui/export.js`,
-`js/plot/common.js`, `css/theme.css`, `css/layout.css` and
-`css/components.css` are kept byte-identical to tinysa-web. A change to one
-of those goes to both repos the same day. `serial-link.js` differs from
-tinysa-web's by the USB filter only.
+`js/plot/common.js` and the three shared CSS files began as copies of
+tinysa-web's page kit. They are this project's own now: change them as the
+fox needs. `<html data-app="fox-hunt-web">` keeps this page's localStorage
+separate from the other tools when they are hosted on one origin.
 
 ## Running the tests
 
@@ -69,12 +69,6 @@ full Chromium (`npx playwright install chromium`), not only the headless
 shell, and skips itself otherwise. Add a firmware test for every new
 command and a page test for every new control. The page tests skip when Playwright is missing locally and fail in
 CI (`REQUIRE_BROWSER=1`).
-
-The three shared-kit files carry one small addition over tinysa-web's copy
-until it is ported there: `<html data-app="…">` scopes the sidebar/console
-localStorage keys and the console download name per tool (`sidebar.js`
-exports `APP`), and `shell-link.js` matches a command's echo as a whole line
-rather than a substring.
 
 ## Licenses
 

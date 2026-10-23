@@ -50,3 +50,16 @@ test('replay: events in time order, seek and feed', () => {
   rec.load(parseSession(JSON.stringify({ tool: 'fox-hunt-web', kind: 'session', readings: rec.readings, scans: rec.scans })));
   assert.equal(rec.readings.length, 4);
 });
+
+test('a session carries carrier edges, the event channels and the wiring', async () => {
+  const { createRecorder } = await import('../js/ui/recorder.js');
+  const rec = createRecorder(); rec.start();
+  rec.addReading({ t: 1000, f: 146.565, rssi: 30 }); rec.addEdge({ t: 1500, on: true, source: 'sq', f: 146.565 }); rec.addEdge({ t: 13500, on: false, source: 'sq', f: 146.565 });
+  const text = await sessionBlob(rec, { app: '0.11.0', device: 'foxhunt 0.5.0', band: 'vhf', settings: { channels: [{ label: 'Fox A', f: 146.565 }], wireAudioIn: true, wireAudioOut: false, attenDb: 0 }, board: [], bearings: [] }).text();
+  const s = parseSession(text);
+  assert.deepEqual(s.edges, [{ t: 1500, on: true, source: 'sq', f: 146.565 }, { t: 13500, on: false, source: 'sq', f: 146.565 }]);
+  assert.equal(s.meta.settings.channels[0].label, 'Fox A'); assert.equal(s.meta.settings.wireAudioIn, true);
+  // an older session without edges still parses
+  const old = parseSession(JSON.stringify({ tool: 'fox-hunt-web', kind: 'session', readings: [], scans: [] }));
+  assert.deepEqual(old.edges, []);
+});

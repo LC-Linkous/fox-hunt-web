@@ -47,8 +47,8 @@ ESP32 passes commands and answers between USB and the module's UART.
      Chrome / Edge, Web Serial
    ┌──────────┴───────────────────────┐
    │ fox-hunt-web                     │
-   │  js/device/ shell-link.js        │  ← byte-identical to tinysa-web
-   │             serial-link.js       │  ← USB filter only
+   │  js/device/ shell-link.js        │  ← began as tinysa-web's
+   │             serial-link.js       │  ← Web Serial, the fox's USB id
    │             fox.js  models.js    │  ← this repo
    │             demo-link.js         │  ← the simulated fox
    │  js/plot/   rssi vs time, scan   │
@@ -318,11 +318,11 @@ simulated beacon the simulated receiver hears.
 
 `js/device/shell-link.js`, `js/ui/sidebar.js`, `js/ui/console.js`,
 `js/ui/export.js`, `js/plot/common.js`, `js/plot/palettes.js`,
-`css/theme.css`, `css/layout.css` and `css/components.css` are kept
-byte-identical to tinysa-web, same rule as
-between tinysa-web and nanovna-web: a diff between repos is the list of
-instrument-specific code. `serial-link.js` differs by the USB filter only
-(the fox is an Espressif USB-Serial/JTAG device, not an STM32).
+`css/theme.css`, `css/layout.css` and `css/components.css` began as copies
+of tinysa-web's page kit — the console framing, the sidebar, the plot base
+— and are this project's own now. `<html data-app="fox-hunt-web">` keeps
+this page's localStorage separate from the other tools when they share an
+origin.
 
 ## Talking to the fox without the page
 
@@ -505,11 +505,15 @@ Node 22: `node --test 'tests/**/*.test.mjs'`.
 
 ### Releasing
 
-Releases are tagged `vX.Y.Z` and carry `code.py` as an asset. Before tagging,
-make `FW_VERSION` in `firmware/code.py`, `FW_NEEDED` in `js/main.js`,
+A release is a tag: `git tag v0.11.0 && git push --tags`. The release
+workflow checks the tag against `APP_VERSION` in `js/main.js`, takes that
+version's section of `CHANGELOG.md` as the notes, and attaches `code.py`
+(also as `foxhunt-firmware-<fw version>.py`) and a zip of the page, so the
+footer's "latest release" link always has a firmware to download. Before
+tagging: `FW_VERSION` in `firmware/code.py`, `FW_NEEDED` in `js/main.js`,
 `FIRMWARE_FLOOR` in `js/device/models.js` (if the protocol changed) and the
-simulated fox's `version` reply agree, run the tests, and add a
-`CHANGELOG.md` entry. The Pages workflow stamps the footer date from the
+simulated fox's `version` reply agree; the three test layers pass; the
+changelog has the entry. The Pages workflow stamps the footer date from the
 commit.
 
 ## Contributing
@@ -522,7 +526,7 @@ protocol-related; it is the diagnostic.
 ## License
 
 The page (`index.html`, `js/`, `css/`) is **GPL-2.0-only**, the same as
-tinysa-web and nanovna-web, so the shared files stay byte-identical.
+tinysa-web and nanovna-web, where its page kit came from.
 
 The firmware (`firmware/code.py`) is **GPL-3.0-only**: it is written to the
 dc34fox board, follows that firmware's pin map and module setup, and the

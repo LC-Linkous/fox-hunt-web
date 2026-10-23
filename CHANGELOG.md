@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.11.0 — listen, session completeness, scan the event, release workflow
+
+- **Listen**: the captured audio to this device's speaker or headphones —
+  a level slider in Audio and a Listen button on the hunt page. Makes the
+  sound-card setup audible on a phone without juggling headphones.
+- **Hunt page**: a one-line key for the Start / Seek / Skip / Lock / Pin
+  row; the status line no longer repeats the guide; the top bar on a phone
+  drops the "Module" label; the simulation button reads "Leave the
+  simulation".
+- **Sessions** carry carrier edges (SQ wire or quieting), and on load the
+  event channels merge into this device's list, the wiring settings come
+  across, and the edges rebuild the board's cycle trackers so the
+  countdown returns with the session.
+- **Scan the event** (Scan & seek): one scan from the lowest event channel
+  to the highest in the receiver's band, at the chosen step.
+- About: the platform table has audio-in / audio-out columns and the three
+  layouts; Pins: the four-pin header proposal (GND, AF_OUT, MIC_IN, 3V3)
+  that makes the sound card, an earpiece or a small speaker a plug-in.
+- **Release workflow**: a `vX.Y.Z` tag publishes a GitHub release with
+  `code.py` and a zip attached and the changelog section as notes.
+- The page kit is this project's own now; the byte-identical rule with
+  tinysa-web is dropped (tinysa-web v0.5.1 took the `data-app` and echo
+  fixes so the tools keep separate state on one origin).
+- Tests: session edges/channels/wiring; page tests for Listen and Scan the
+  event. 50 node + 26 firmware + 15 page.
+
 ## v0.10.1 — hunt guide, wires, small fixes
 
 - **Hunt page**: a "what now" line at the top that follows the state — connect,

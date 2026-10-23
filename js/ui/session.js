@@ -10,7 +10,7 @@ const iso = t => new Date(t).toISOString();
 
 /** Serialize. meta: { app, device, band, settings }. */
 export function sessionBlob(recorder, meta) {
-  return new Blob([JSON.stringify({ tool: 'fox-hunt-web', kind: 'session', version: 1, ...meta, savedAt: iso(Date.now()), startedAt: recorder.startedAt && iso(recorder.startedAt), readings: recorder.readings, scans: recorder.scans })], { type: 'application/json' });
+  return new Blob([JSON.stringify({ tool: 'fox-hunt-web', kind: 'session', version: 1, ...meta, savedAt: iso(Date.now()), startedAt: recorder.startedAt && iso(recorder.startedAt), readings: recorder.readings, edges: recorder.edges || [], scans: recorder.scans })], { type: 'application/json' });
 }
 /** Parse a session (or a plain recording from an earlier version). Throws if it isn't one. */
 export function parseSession(text) {
@@ -18,7 +18,8 @@ export function parseSession(text) {
   if (!o || !['fox-hunt-web', 'fox-demo-web'].includes(o.tool) || !['session', 'recording'].includes(o.kind)) throw new Error('not a fox-hunt-web session');   // fox-demo-web: the project's name before v0.5
   const readings = (o.readings || []).map(r => ({ t: +r.t, f: r.f == null ? null : +r.f, rssi: +r.rssi, lat: r.lat, lon: r.lon, acc: r.acc }));
   const scans = (o.scans || []).map(s => ({ t: +s.t, start: +s.start, stop: +s.stop, stepKHz: +s.stepKHz, f: Float64Array.from(s.f), rssi: Int16Array.from(s.rssi), n: s.f.length, lat: s.lat, lon: s.lon, acc: s.acc }));
-  return { meta: { app: o.app, device: o.device, band: o.band, settings: o.settings, savedAt: o.savedAt, board: Array.isArray(o.board) ? o.board : [], bearings: Array.isArray(o.bearings) ? o.bearings : [] }, readings, scans, startedAt: o.startedAt ? Date.parse(o.startedAt) : null };
+  const edges = (o.edges || []).map(e => ({ t: +e.t, on: !!e.on, source: e.source || 'sq', f: e.f == null ? null : +e.f })).filter(e => Number.isFinite(e.t));
+  return { edges, meta: { app: o.app, device: o.device, band: o.band, settings: o.settings, savedAt: o.savedAt, board: Array.isArray(o.board) ? o.board : [], bearings: Array.isArray(o.bearings) ? o.bearings : [] }, readings, scans, startedAt: o.startedAt ? Date.parse(o.startedAt) : null };
 }
 /** Open a file chooser; resolves with the file's text, or null if cancelled. */
 export function pickFile(accept = '.json,application/json') {

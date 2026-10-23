@@ -237,6 +237,10 @@ ptest('audio: the CW decoder reads W1AW from the sound card and the SSTV decoder
     const px = await page.evaluate(() => { const c = document.getElementById('sstvCanvas'), g = c.getContext('2d'); const l = g.getImageData(40, 100, 1, 1).data, r = g.getImageData(280, 100, 1, 1).data; return [[...l].slice(0, 3), [...r].slice(0, 3)]; });
     assert.ok(px[0][0] > 150 && px[0][1] < 100, `left pixel ${px[0]} should be red`); assert.ok(px[1][1] > 150 && px[1][0] < 100, `right pixel ${px[1]} should be green`);
     assert.match(await page.locator('#quietText').innerText(), /dB/);
+    // listen: the slider sets the monitor gain and the hunt button mirrors it
+    await page.locator('#listenLevel').evaluate(el => { el.value = 50; el.dispatchEvent(new Event('input', { bubbles: true })); });
+    assert.equal(await page.locator('#listenText').innerText(), '50%'); assert.equal(await page.locator('#hListenBtn').innerText(), 'Listen 50%');
+    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('fox-hunt-web.settings')).listen), 0.5);
     assert.deepEqual(errors, []);
   } finally { await ctx.close(); await b2.close(); fs.rmSync(wav, { force: true }); }
 });
@@ -260,6 +264,9 @@ ptest('setup page: event channels feed the presets, the board and autoseek; expo
   assert.match((await d.text('presets')).replace(/\s+/g, ' '), /146\.520 Fox A/);
   await d.open('hunt'); assert.equal(await d.page.locator('#boardBody tr').count(), 3);
   await d.open('scan'); assert.ok(await d.page.locator('#seekChans').isChecked());
+  await d.page.click('#scanEventBtn');                                // lowest to highest event channel, at the step
+  await d.page.waitForFunction(() => document.getElementById('scanPeak').textContent !== '—', null, { timeout: 15000 });
+  assert.equal(await d.page.locator('#scanStart').inputValue(), '146.5075'); assert.equal(await d.page.locator('#scanStop').inputValue(), '146.5775');
   await d.page.click('#seekBtn'); await d.page.waitForFunction(() => /146\.5(2|65)00 MHz/.test(document.getElementById('seekStatus').textContent), null, { timeout: 30000 });
   await d.page.click('#seekBtn');
   await d.close();

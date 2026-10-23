@@ -119,3 +119,6 @@ table.chans th:first-child, table.chans td:first-child { text-align: left; }
 .hunt-guide #hGuideText { flex: 1; }
 .hunt-help { background: var(--panel); border: 1px solid var(--edge); border-radius: var(--radius); padding: 6px 12px 6px 28px; font-size: .9rem; color: var(--ink-2); }
 .hunt-help li { margin: 6px 0; line-height: 1.45; }
+
+/* the top bar on a phone: five things in two rows, the Module label dropped */
+@media (max-width: 480px) { .topbar label .suffix { display: none; } .topbar #bandSel { max-width: 46vw; } }

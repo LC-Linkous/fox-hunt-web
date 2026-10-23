@@ -1,0 +1,46 @@
+name: release
+
+# A tag `vX.Y.Z` makes a GitHub release with the firmware attached, so the
+# page's "latest release" link always has a code.py to download:
+#   git tag v0.11.0 && git push --tags
+# The release notes are that version's section of CHANGELOG.md.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check the tag matches the page and the firmware
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          page=$(sed -n "s/^const APP_VERSION = '\([^']*\)';.*/\1/p" js/main.js)
+          [ "$tag" = "$page" ] || { echo "tag v$tag but js/main.js says $page"; exit 1; }
+          fw=$(sed -n 's/^FW_VERSION = "\([^"]*\)".*/\1/p' firmware/code.py)
+          echo "page $page, firmware $fw"
+      - name: Release notes from the changelog
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          awk -v v="$tag" '/^## v/ { on = ($2 == "v" v) } on' CHANGELOG.md > notes.md
+          [ -s notes.md ] || echo "See CHANGELOG.md." > notes.md
+          fw=$(sed -n 's/^FW_VERSION = "\([^"]*\)".*/\1/p' firmware/code.py)
+          printf '\n**Firmware %s** is attached as `code.py` (receive-only build; the page can install it with transmit enabled). PROTOCOL.md documents its console.\n' "$fw" >> notes.md
+      - name: Assets
+        run: |
+          fw=$(sed -n 's/^FW_VERSION = "\([^"]*\)".*/\1/p' firmware/code.py)
+          cp firmware/code.py "code.py"
+          cp firmware/code.py "foxhunt-firmware-$fw.py"
+          zip -qr "fox-hunt-web-${GITHUB_REF_NAME}.zip" index.html about.html pins.html sw.js css js firmware PROTOCOL.md README.md CHANGELOG.md LICENSE
+      - uses: softprops/action-gh-release@v2
+        with:
+          body_path: notes.md
+          files: |
+            code.py
+            foxhunt-firmware-*.py
+            fox-hunt-web-*.zip

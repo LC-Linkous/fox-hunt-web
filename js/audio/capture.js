@@ -34,7 +34,7 @@ export async function listInputs() {
 }
 
 export function createCapture() {
-  const cap = { running: false, sampleRate: 48000, ctx: null, stream: null, node: null, analyser: null, onBlock: null, onLevel: null, deviceLabel: '' };
+  const cap = { running: false, sampleRate: 48000, ctx: null, stream: null, node: null, analyser: null, onBlock: null, onLevel: null, deviceLabel: '', monitor: null, monitorGain: 0 };
   let spec = null, peakHold = 0;
 
   cap.start = async deviceId => {
@@ -57,6 +57,8 @@ export function createCapture() {
       cap.onBlock?.(block, cap.sampleRate);
     };
     src.connect(cap.analyser); src.connect(cap.node);
+    // listen: the same audio to the speaker, through a gain the page controls (0 = silent, the default)
+    cap.monitor = cap.ctx.createGain(); cap.monitor.gain.value = cap.monitorGain; src.connect(cap.monitor); cap.monitor.connect(cap.ctx.destination);
     if (cap.ctx.state !== 'running') await cap.ctx.resume();
     cap.running = true;
   };
@@ -65,8 +67,10 @@ export function createCapture() {
     try { cap.node?.disconnect(); } catch {}
     try { cap.stream?.getTracks().forEach(t => t.stop()); } catch {}
     try { await cap.ctx?.close(); } catch {}
-    cap.ctx = null; cap.stream = null; cap.node = null; cap.analyser = null;
+    cap.ctx = null; cap.stream = null; cap.node = null; cap.analyser = null; cap.monitor = null;
   };
+  /** Listen level 0..1 (kept across start/stop). On a phone this is the speaker; on a laptop whatever the default output is. */
+  cap.setMonitor = v => { cap.monitorGain = Math.max(0, Math.min(1, v)); if (cap.monitor) cap.monitor.gain.setTargetAtTime(cap.monitorGain, cap.ctx.currentTime, 0.02); };
   /** dB spectrum from the analyser (reused buffer), with the Hz per bin. */
   cap.spectrum = () => {
     if (!cap.analyser) return null;

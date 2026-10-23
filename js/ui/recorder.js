@@ -5,11 +5,13 @@
 const iso = t => new Date(t).toISOString();
 
 export function createRecorder() {
-  const rec = { on: false, readings: [], scans: [], startedAt: null, onChange: null };
+  const rec = { on: false, readings: [], scans: [], edges: [], startedAt: null, onChange: null };
 
   rec.start = () => { rec.on = true; rec.startedAt = rec.startedAt || Date.now(); rec.onChange?.(); };
   rec.stop = () => { rec.on = false; rec.onChange?.(); };
-  rec.clear = () => { rec.readings = []; rec.scans = []; rec.startedAt = null; rec.onChange?.(); };
+  rec.clear = () => { rec.readings = []; rec.scans = []; rec.edges = []; rec.startedAt = null; rec.onChange?.(); };
+  /** A carrier edge from the SQ wire or noise quieting: { t, on, source, f }. */
+  rec.addEdge = e => { if (!rec.on) return; rec.edges.push({ t: Math.round(e.t), on: !!e.on, source: e.source, f: e.f }); if (rec.edges.length > 5000) rec.edges.shift(); };
 
   /** One reading { t, f, rssi }, or a burst { t0, ms, rssi, f }. Stores copies. */
   /** geo: optional { lat, lon, acc } stamped onto the record (the page passes geo.stamp()). */
@@ -33,7 +35,7 @@ export function createRecorder() {
     return new Blob([rows.join('\n') + '\n'], { type: 'text/csv' });
   };
   /** Replace the contents with a parsed session's records (session.js parseSession). */
-  rec.load = ({ readings, scans, startedAt }) => { rec.readings = readings.map(r => ({ ...r })); rec.scans = scans.map(s => ({ ...s, f: Array.from(s.f), rssi: Array.from(s.rssi) })); rec.startedAt = startedAt || rec.readings[0]?.t || rec.scans[0]?.t || null; rec.onChange?.(); };
+  rec.load = ({ readings, scans, edges, startedAt }) => { rec.edges = (edges || []).map(e => ({ ...e })); rec.readings = readings.map(r => ({ ...r })); rec.scans = scans.map(s => ({ ...s, f: Array.from(s.f), rssi: Array.from(s.rssi) })); rec.startedAt = startedAt || rec.readings[0]?.t || rec.scans[0]?.t || null; rec.onChange?.(); };
 
   return rec;
 }

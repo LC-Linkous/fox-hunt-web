@@ -78,6 +78,11 @@ The simulated fox and session replay work everywhere.
 - Firmware `rssi stream` (unprompted, cancel on any byte) if the polled
   rate turns out to limit anything.
 
+## v0.11 — listen, sessions, release — shipped
+
+- Listen output, session completeness, scan the event, release workflow;
+  the page kit decoupled from tinysa-web.
+
 ## v0.10 — SSTV transmit, Setup page, noise quieting — shipped
 
 - SSTV transmit through a sound card into MIC_IN (`mic line`), the Setup
@@ -91,6 +96,7 @@ The simulated fox and session replay work everywhere.
 
 ## Hardware test checklist (needs a real fox)
 
+- The in-page installer against a real board's "Press any key to enter the REPL" step (modelled in FakeRepl, unproven).
 - RX build: `version`/`info` on first connect (banner handling), `rssi 10`
   gives 10 lines, `scan` restores the tuned frequency, the installer round
   trip from the page.

@@ -29,7 +29,7 @@ import { initSidebar } from './ui/sidebar.js';
 import { download, stamp, canvasPng } from './ui/export.js';
 import { createRecorder } from './ui/recorder.js';
 
-const APP_VERSION = '0.10.1';
+const APP_VERSION = '0.11.0';
 const FW_NEEDED = '0.5.0';
 const BURST = 10;                 // readings per `rssi N` while the receiver runs (~1 s of data per round trip)
 const $ = id => document.getElementById(id);
@@ -137,6 +137,7 @@ function setEnabled(on) {
   ['tuneBtn', 'liveBtn', 'oneBtn', 'scanBtn', 'scanLoopBtn', 'maxResetBtn', 'pinBtn', 'seekBtn', 'hLiveBtn', 'hSeekBtn', 'hPinBtn'].forEach(id => $(id).disabled = !set);
   ['seekSkipBtn', 'seekLockBtn', 'hSkipBtn', 'hLockBtn'].forEach(id => $(id).disabled = !set || !state.seeking);
   $('pinPeakBtn').disabled = !set || !state.scan;
+  $('scanEventBtn').disabled = !set || !channels().length;
   ['captureBtn', 'hCaptureBtn'].forEach(id => $(id).disabled = !set);
   ['bwSel', 'sqSel', 'volSel', 'callsign', 'callsignBtn'].forEach(id => $(id).disabled = !on);
   $('sqWire').disabled = !on || !state.fox.ident.build || state.fox.ident.build[1] < 4;   // `sq`/`events` arrived in firmware 0.4.0
@@ -144,7 +145,7 @@ function setEnabled(on) {
   $('rxBadge').hidden = !on;
   $('demoBtn').disabled = on && !state.demo;
   $('demoBtn').classList.toggle('demo-active', on && state.demo); $('demoBtn').setAttribute('aria-pressed', String(on && state.demo));
-  $('demoBtn').textContent = on && state.demo ? 'Simulated fox (click to leave)' : 'Try without hardware';
+  $('demoBtn').textContent = on && state.demo ? 'Leave the simulation' : 'Try without hardware';
   $('connectBtn').textContent = on ? 'Disconnect' : 'Connect to fox';
   $('connectBtn').disabled = !hasWebSerial() && !state.demo ? true : (on && state.demo);
   $('tunePeakBtn').disabled = !set || !state.scan;
@@ -261,6 +262,7 @@ async function pollEvents() {
   const ev = await fox.events();
   state.sqFeeder.sync(ev.now);
   const n = state.sqFeeder.feed(ev.edges);
+  for (const e of ev.edges) recorder.addEdge({ t: e.ms + state.sqFeeder.offset, on: e.on, source: 'sq', f: fox.state.freq });
   state.sqFeeder.apply(ev.carrier, ev.now);
   if (n) chart.huntDirty = true;
   showSq();
@@ -282,7 +284,7 @@ async function liveLoop() {
   if (state.gen.live === gen) stopLive();
 }
 function stopLive() { state.live = false; state.gen.live++; for (const id of ['liveBtn', 'hLiveBtn']) { const b = $(id); b.textContent = 'Start receiver'; b.classList.remove('running'); b.setAttribute('aria-pressed', 'false'); } $('rateNow').textContent = '—'; }
-function startLive() { if (!state.fox?.bandSet || state.live) return; if (state.replaying) exitReplay(); stopSeek(); state.live = true; $('hStatus').textContent = `receiver running on ${fmtMHz(state.fox.state.freq)} · the countdown appears after two bursts`; liveLoop(); }
+function startLive() { if (!state.fox?.bandSet || state.live) return; if (state.replaying) exitReplay(); stopSeek(); state.live = true; $('hStatus').textContent = ''; liveLoop(); }
 $('liveBtn').addEventListener('click', () => { if (state.live) { stopLive(); state.fox?.cancel(); } else startLive(); });
 $('hLiveBtn').addEventListener('click', () => { if (state.live) { stopLive(); state.fox?.cancel(); } else startLive(); });
 $('oneBtn').addEventListener('click', async () => { try { const r = await state.fox.rssi(); takeSample(r.t, r.rssi, r.f); recorder.addReading(r, stampFor()); } catch (e) { con.err(e.message); } });
@@ -338,6 +340,16 @@ async function scanLoop() {
 }
 function stopScanLoop() { state.scanLoop = false; state.gen.scan++; const b = $('scanLoopBtn'); b.textContent = 'Scan continuously'; b.classList.remove('running'); b.setAttribute('aria-pressed', 'false'); $('scanBtn').disabled = !state.fox?.bandSet; }
 $('scanBtn').addEventListener('click', doScan);
+$('scanEventBtn').addEventListener('click', () => {
+  // the event channels in the band the receiver is on now (a dual-band module cannot scan both in one range)
+  const m = state.fox?.env, f0 = state.fox?.state.freq, seg = (m?.moduleBands || []).find(([a, b]) => f0 >= a && f0 <= b) || (m?.moduleBands || [])[0];
+  const ev = seg ? channels().filter(c => c.f >= seg[0] && c.f <= seg[1]) : [];
+  if (!ev.length) { con.err('scan the event: no event channels in this band (Setup)'); return; }
+  const lo = Math.min(...ev.map(c => c.f)), hi = Math.max(...ev.map(c => c.f)), step = parseFloat($('scanStep').value) / 1000;
+  $('scanStart').value = (lo - step).toFixed(4); $('scanStop').value = (hi + step).toFixed(4); updateScanCount();
+  const { count } = scanParams(); if (count > 128) { con.err(`scan the event: ${count} channels at ${$('scanStep').value} kHz; pick a wider step`); return; }
+  doScan();
+});
 $('scanLoopBtn').addEventListener('click', () => { if (state.scanLoop) { stopScanLoop(); state.fox?.cancel(); } else if (state.fox?.bandSet) { state.scanLoop = true; scanLoop(); } });
 $('tunePeakBtn').addEventListener('click', () => { const s = state.scan; if (!s) return; const p = peakIndex(s.rssi); if (p >= 0) { $('freq').value = s.f[p].toFixed(4); tune(); } });
 $('pinPeakBtn').addEventListener('click', () => { const s = state.scan; if (!s) return; const p = peakIndex(s.rssi); if (p >= 0) { board.pin(s.f[p], { label: 'scan' }); con.dim(`pinned ${s.f[p].toFixed(4)} MHz from the scan`); } });
@@ -640,6 +652,12 @@ $('sessLoadBtn').addEventListener('click', async () => {
     if (!n) throw new Error('the session has no readings or scans');
     if (sess.meta.settings?.attenDb != null) { settings.attenDb = sess.meta.settings.attenDb; applyAtten(); }
     if (sess.meta.board?.length) board.restore(sess.meta.board);
+    // the event's channels and the wiring travel with the session; channels merge into what this device has
+    if (sess.meta.settings?.channels?.length) { const list = channels(); let added = 0; for (const c of sess.meta.settings.channels) if (Number.isFinite(c.f) && !list.some(x => Math.abs(x.f - c.f) < 1e-6)) { list.push({ label: c.label || '', f: c.f }); added++; } if (added) { saveChannels(list); con.dim(`session: ${added} event channel${added === 1 ? '' : 's'} added`); } }
+    for (const k of ['wireAudioIn', 'wireAudioOut']) if (typeof sess.meta.settings?.[k] === 'boolean') settings[k] = sess.meta.settings[k];
+    saveSettings(); applyWires();
+    // carrier edges (SQ wire or quieting) into the board's trackers, so the countdown comes back with the session
+    for (const e of sess.edges || []) { const x = e.f != null && board.get(e.f); if (!x) continue; if (!x.edgeFeeder) { x.edgeFeeder = createEdgeFeeder(x.cycle); x.edgeFeeder.sync(0, 0); x.cycle.hardware = true; x.cycle.source = e.source; } x.edgeFeeder.feed([{ ms: e.t, on: e.on }]); }
     if (sess.meta.bearings?.length) { state.captures = sess.meta.bearings.map(o => { const c = restoreCapture(o); c.label = o.label; return c; }); renderBearings(); }
     enterReplay(`${n} records · ${sess.meta.device || 'unknown fox'} · saved ${sess.meta.savedAt ? new Date(sess.meta.savedAt).toLocaleString() : '?'}`);
     con.dim(`session loaded: ${sess.readings.length} readings, ${sess.scans.length} scans`);
@@ -870,6 +888,7 @@ quiet.onChange = (t, on, db) => {
   if (!quietFeeder || quietFeeder.tracker !== state.cycle) { quietFeeder = createEdgeFeeder(state.cycle); quietFeeder.tracker = state.cycle; quietFeeder.sync(0, 0); }
   state.cycle.hardware = true; state.cycle.source = 'audio';
   quietFeeder.feed([{ ms: t, on }]); quietFeeder.apply(on, t); chart.huntDirty = true;
+  recorder.addEdge({ t, on, source: 'audio', f: state.fox.state.freq });
 };
 $('quietChk').checked = !!settings.quieting;
 $('quietChk').addEventListener('change', () => { settings.quieting = $('quietChk').checked; saveSettings(); quiet.reset(); $('quietText').textContent = settings.quieting ? (capture.running ? 'listening' : 'start audio') : 'off'; if (!settings.quieting && state.cycle.source === 'audio') { state.cycle.hardware = false; state.cycle.source = null; } });
@@ -897,6 +916,12 @@ sstvDec.onLine = y => {
 sstvDec.onImage = () => { setAudioView('sstv'); $('sstvCaption').textContent = `${sstvDec.mode.name}, ${sstvDec.mode.width}×${sstvDec.mode.height}, ${new Date().toLocaleTimeString()}`; };
 $('sstvSaveBtn').addEventListener('click', () => canvasPng(sstvCanvas, `fox-sstv-${stamp()}.png`));
 $('sstvResetBtn').addEventListener('click', () => { sstvDec.reset(); });
+// listen: the captured audio to this device's output
+function showListen() { const v = Math.round(settings.listen * 100); $('listenLevel').value = String(v); $('listenText').textContent = v ? `${v}%` : 'off'; $('hListenBtn').setAttribute('aria-pressed', String(v > 0)); $('hListenBtn').textContent = v ? `Listen ${v}%` : 'Listen'; }
+function setListen(v) { settings.listen = Math.max(0, Math.min(1, v)); saveSettings(); capture.setMonitor(settings.listen); showListen(); }
+$('listenLevel').addEventListener('input', () => setListen(parseInt($('listenLevel').value, 10) / 100));
+$('hListenBtn').addEventListener('click', async () => { if (!capture.running) { $('audioBtn').click(); await new Promise(r => setTimeout(r, 300)); } setListen(settings.listen > 0 ? 0 : 0.7); });
+capture.setMonitor(settings.listen); showListen();
 $('audioBtn').addEventListener('click', async () => {
   const b = $('audioBtn');
   if (capture.running) { await capture.stop(); $('hAudioBtn').textContent = 'Audio off'; $('hAudioBtn').setAttribute('aria-pressed', 'false'); b.textContent = 'Start audio'; b.classList.remove('running'); b.setAttribute('aria-pressed', 'false'); $('audioInfo').textContent = '—'; $('audioHead').textContent = 'from the sound card'; $('audioProc').textContent = 'asks for: echo cancellation off, auto gain off, noise suppression off, mono, 48 kHz'; $('audioProc').classList.remove('err'); chart.dirty = true; return; }
