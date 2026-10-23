@@ -122,3 +122,5 @@ table.chans th:first-child, table.chans td:first-child { text-align: left; }
 
 /* the top bar on a phone: five things in two rows, the Module label dropped */
 @media (max-width: 480px) { .topbar label .suffix { display: none; } .topbar #bandSel { max-width: 46vw; } }
+.cw-log { font-family: var(--mono); font-size: .8rem; color: var(--ink-2); max-height: 140px; overflow: auto; margin-top: 6px; }
+.cw-log div b { color: var(--maxhold); font-weight: 700; }

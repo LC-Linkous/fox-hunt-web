@@ -106,3 +106,18 @@ test('SSTV Robot36 round trip (YUV)', () => {
   const err = meanAbsError(dec.image, src, W, H);
   assert.ok(err < 24, `mean abs error ${err.toFixed(1)}`);   // 4:2:0 chroma and the bars cost more here
 });
+
+test('CW: a short dropout inside a dah (FM fade) does not split it; a long noise run is dropped, not printed', () => {
+  const SR = 48000, dec = new CwDecoder({ sampleRate: SR, autoTone: false, toneHz: 800 }); let text = '';
+  dec.onText = ch => { text += ch; };
+  const u = 80, tone = (ms, amp = 0.5) => { const n = Math.round(ms * SR / 1000), o = new Float32Array(n); for (let i = 0; i < n; i++) o[i] = amp * Math.sin(2 * Math.PI * 800 * i / SR); return o; };
+  const hiss = (ms, amp = 0.02) => { const n = Math.round(ms * SR / 1000), o = new Float32Array(n); let s = 9; for (let i = 0; i < n; i++) { s = (s * 1664525 + 1013904223) >>> 0; o[i] = amp * ((s / 4294967296) * 2 - 1); } return o; };
+  dec.feed(hiss(600));
+  // "T" as a dah with a 15 ms hole in the middle, then "E"
+  dec.feed(tone(110)); dec.feed(hiss(15)); dec.feed(tone(115)); dec.feed(hiss(3 * u));
+  dec.feed(tone(u)); dec.feed(hiss(8 * u));
+  assert.match(text, /^\s*T\s*E\s*$/, `got ${JSON.stringify(text)}`);
+  // ten dits in a row is not a character: nothing printed for it
+  text = ''; for (let i = 0; i < 10; i++) { dec.feed(tone(u)); dec.feed(hiss(u)); } dec.feed(hiss(8 * u));
+  assert.ok(!/¿/.test(text), `noise run printed ${JSON.stringify(text)}`);
+});

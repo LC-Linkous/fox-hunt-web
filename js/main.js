@@ -22,6 +22,7 @@ import { CwDecoder } from './audio/cw.js';
 import { SstvDecoder, MODES as SSTV_MODES, encodeSstv } from './audio/sstv.js';
 import { createPlayout, listOutputs, fitImage, hasPlayout } from './audio/playout.js';
 import { createQuieting } from './audio/quieting.js';
+import { createWavRecorder, parseWav, playThrough } from './audio/wav.js';
 import { cssVar } from './plot/common.js';
 import { settings, applyTheme, initSettingsPanel, rssiRange, save as saveSettings } from './ui/settings.js';
 import { initConsole } from './ui/console.js';
@@ -29,7 +30,7 @@ import { initSidebar } from './ui/sidebar.js';
 import { download, stamp, canvasPng } from './ui/export.js';
 import { createRecorder } from './ui/recorder.js';
 
-const APP_VERSION = '0.11.0';
+const APP_VERSION = '0.12.0';
 const FW_NEEDED = '0.5.0';
 const BURST = 10;                 // readings per `rssi N` while the receiver runs (~1 s of data per round trip)
 const $ = id => document.getElementById(id);
@@ -892,7 +893,38 @@ quiet.onChange = (t, on, db) => {
 };
 $('quietChk').checked = !!settings.quieting;
 $('quietChk').addEventListener('change', () => { settings.quieting = $('quietChk').checked; saveSettings(); quiet.reset(); $('quietText').textContent = settings.quieting ? (capture.running ? 'listening' : 'start audio') : 'off'; if (!settings.quieting && state.cycle.source === 'audio') { state.cycle.hardware = false; state.cycle.source = null; } });
+// record what the sound card hears; replay a WAV through the same decoders
+const wavRec = createWavRecorder({ maxSeconds: 600 }); let wavReplay = null;
+const wavText = t => { $('wavText').textContent = t; };
+function showWav() {
+  $('wavRecBtn').disabled = !capture.running && !wavRec.on; $('wavRecBtn').textContent = wavRec.on ? 'Stop recording' : 'Record audio'; $('wavRecBtn').setAttribute('aria-pressed', String(wavRec.on)); $('wavRecBtn').classList.toggle('running', wavRec.on);
+  $('wavSaveBtn').disabled = !wavRec.samples || wavRec.on; $('wavStopBtn').disabled = !wavReplay;
+  if (!wavReplay) wavText(wavRec.on ? `recording ${wavRec.seconds().toFixed(0)} s` : wavRec.samples ? `${wavRec.seconds().toFixed(0)} s recorded` : '—');
+}
+wavRec.onChange = showWav;
+setInterval(() => { if (wavRec.on) showWav(); }, 1000);
+$('wavRecBtn').addEventListener('click', () => { if (wavRec.on) wavRec.stop(); else { if (!capture.running) return; wavRec.start(capture.sampleRate); con.dim('audio: recording to WAV'); } showWav(); });
+$('wavSaveBtn').addEventListener('click', () => download(`fox-audio-${stamp()}.wav`, wavRec.blob()));
+$('wavOpenBtn').addEventListener('click', async () => {
+  const file = await new Promise(res => { const i = document.createElement('input'); i.type = 'file'; i.accept = '.wav,audio/wav'; i.onchange = () => res(i.files[0] || null); i.click(); }); if (!file) return;
+  let wav; try { wav = parseWav(await file.arrayBuffer()); } catch (e) { wavText(e.message); return; }
+  if (wavReplay) wavReplay.stop();
+  const realtime = $('wavRealtime').checked, feedAll = (block, sr) => { capture.onBlock(block, sr); if (realtime && settings.listen > 0) playoutTap(block, sr); };
+  wavText(`replaying ${file.name} (${(wav.samples.length / wav.sampleRate).toFixed(0)} s)${realtime ? '' : ' fast'}`);
+  wavReplay = playThrough(wav.samples, wav.sampleRate, feedAll, { realtime, onProgress: p => { $('wavText').textContent = `replaying ${file.name}: ${Math.round(p * 100)}%`; } });
+  showWav(); const ok = await wavReplay.done; wavReplay = null; showWav(); wavText(ok ? `replayed ${file.name}` : 'replay stopped');
+});
+$('wavStopBtn').addEventListener('click', () => { wavReplay?.stop(); });
+/** Real-time replay to the speaker: the WAV's blocks queued onto an AudioContext. */
+let tapCtx = null, tapAt = 0;
+function playoutTap(block, sr) {
+  if (!tapCtx) tapCtx = new AudioContext({ sampleRate: sr });
+  const buf = tapCtx.createBuffer(1, block.length, sr); buf.copyToChannel(block instanceof Float32Array ? block : Float32Array.from(block), 0);
+  const src = tapCtx.createBufferSource(); src.buffer = buf; const g = tapCtx.createGain(); g.gain.value = settings.listen; src.connect(g); g.connect(tapCtx.destination);
+  tapAt = Math.max(tapAt, tapCtx.currentTime + 0.05); src.start(tapAt); tapAt += block.length / sr;
+}
 capture.onBlock = (block, sr) => {
+  wavRec.feed(block, sr);
   if (cwDec.sr !== sr) { cwDec.sr = sr; cwDec.block = Math.round(sr * cwDec.blockMs / 1000); }
   if (sstvDec.sr !== sr) sstvDec.sr = sr;
   cwDec.autoTone = $('cwAuto').checked && sstvDec.state !== 'image';   // a picture's tones are not a CW pitch
@@ -900,11 +932,23 @@ capture.onBlock = (block, sr) => {
   if (settings.quieting) { if (quiet.sampleRate !== sr) { quiet.sampleRate = sr; quiet.reset(); } quiet.feed(block, Date.now()); if (Date.now() - quietShown > 250) { quietShown = Date.now(); $('quietText').textContent = `${quiet.on ? 'carrier' : 'quiet'} · ${quiet.quietingDb.toFixed(0)} dB`; } }
   chart.dirty = true;
 };
-cwDec.onText = ch => { const el = $('cwDecoded'); el.textContent = (el.textContent + ch).slice(-2000); $('cwSaveBtn').disabled = false; $('hCwText').textContent = el.textContent.slice(-80); if (ch === ' ') noteDecoded(); };
+// the decoded log: one line per burst (a pause of 3 s or a retune starts a new one), with time, frequency and pitch
+const cwLog = { lines: [], cur: null };
+function cwLogChar(ch) {
+  const now = Date.now();
+  if (!cwLog.cur || now - cwLog.cur.last > 3000 || cwLog.cur.f !== state.fox?.state.freq) { if (ch === ' ') return; cwLog.cur = { t: now, last: now, f: state.fox?.state.freq ?? null, hz: Math.round(cwDec.toneHz), wpm: Math.round(cwDec.wpm), text: '' }; cwLog.lines.push(cwLog.cur); if (cwLog.lines.length > 500) cwLog.lines.shift(); }
+  cwLog.cur.text += ch; cwLog.cur.last = now; cwLog.cur.wpm = Math.round(cwDec.wpm);
+  const el = $('cwLog'); const line = cwLog.cur, id = `cwl${line.t}`; let row = document.getElementById(id);
+  if (!row) { row = document.createElement('div'); row.id = id; el.appendChild(row); while (el.children.length > 60) el.removeChild(el.firstChild); }
+  row.innerHTML = `${new Date(line.t).toTimeString().slice(0, 8)} ${line.f != null ? line.f.toFixed(4) : '—'} ${line.hz} Hz ${line.wpm} wpm  <b></b>`; row.querySelector('b').textContent = line.text.trim();
+  el.scrollTop = el.scrollHeight; $('cwLogBtn').disabled = false;
+}
+$('cwLogBtn').addEventListener('click', () => download(`fox-cw-log-${stamp()}.txt`, new Blob([cwLog.lines.map(l => `${new Date(l.t).toISOString()}\t${l.f != null ? l.f.toFixed(4) : ''}\t${l.hz}\t${l.wpm}\t${l.text.trim()}`).join('\n') + '\n'], { type: 'text/plain' })));
+cwDec.onText = ch => { cwLogChar(ch); const el = $('cwDecoded'); el.textContent = (el.textContent + ch).slice(-2000); $('cwSaveBtn').disabled = false; $('hCwText').textContent = el.textContent.slice(-80); if (ch === ' ') noteDecoded(); };
 cwDec.onElement = e => { const el = $('cwElements'); el.textContent = (el.textContent + (e === ' ' ? ' ' : e === '/' ? ' / ' : e)).slice(-400); };
 $('cwTone').addEventListener('change', () => { cwDec.toneHz = parseInt($('cwTone').value, 10) || 800; });
 $('cwAuto').addEventListener('change', () => { cwDec.autoTone = $('cwAuto').checked; });
-$('cwClearBtn').addEventListener('click', () => { cwDec.reset(); $('cwDecoded').textContent = ''; $('cwElements').textContent = ''; });
+$('cwClearBtn').addEventListener('click', () => { cwDec.reset(); $('cwDecoded').textContent = ''; $('cwElements').textContent = ''; cwLog.lines = []; cwLog.cur = null; $('cwLog').innerHTML = ''; $('cwLogBtn').disabled = true; });
 $('cwSaveBtn').addEventListener('click', () => download(`fox-cw-${stamp()}.txt`, new Blob([$('cwDecoded').textContent + '\n'], { type: 'text/plain' })));
 const sstvCanvas = $('sstvCanvas');
 sstvDec.onStatus = t => { $('sstvStatus').textContent = t; $('sstvCaption').textContent = t; };
@@ -924,13 +968,13 @@ $('hListenBtn').addEventListener('click', async () => { if (!capture.running) { 
 capture.setMonitor(settings.listen); showListen();
 $('audioBtn').addEventListener('click', async () => {
   const b = $('audioBtn');
-  if (capture.running) { await capture.stop(); $('hAudioBtn').textContent = 'Audio off'; $('hAudioBtn').setAttribute('aria-pressed', 'false'); b.textContent = 'Start audio'; b.classList.remove('running'); b.setAttribute('aria-pressed', 'false'); $('audioInfo').textContent = '—'; $('audioHead').textContent = 'from the sound card'; $('audioProc').textContent = 'asks for: echo cancellation off, auto gain off, noise suppression off, mono, 48 kHz'; $('audioProc').classList.remove('err'); chart.dirty = true; return; }
+  if (capture.running) { await capture.stop(); if (wavRec.on) wavRec.stop(); showWav(); $('hAudioBtn').textContent = 'Audio off'; $('hAudioBtn').setAttribute('aria-pressed', 'false'); b.textContent = 'Start audio'; b.classList.remove('running'); b.setAttribute('aria-pressed', 'false'); $('audioInfo').textContent = '—'; $('audioHead').textContent = 'from the sound card'; $('audioProc').textContent = 'asks for: echo cancellation off, auto gain off, noise suppression off, mono, 48 kHz'; $('audioProc').classList.remove('err'); chart.dirty = true; return; }
   try {
     await capture.start($('audioDev').value || undefined);
     cwDec.sr = capture.sampleRate; cwDec.block = Math.round(capture.sampleRate * cwDec.blockMs / 1000); cwDec.toneHz = parseInt($('cwTone').value, 10) || 800; sstvDec.sr = capture.sampleRate;
     b.textContent = 'Stop audio'; b.classList.add('running'); b.setAttribute('aria-pressed', 'true'); $('hAudioBtn').textContent = 'Audio on'; $('hAudioBtn').setAttribute('aria-pressed', 'true');
     $('audioInfo').textContent = `${capture.deviceLabel || 'input'} · ${capture.sampleRate} Hz`; $('audioHead').textContent = capture.deviceLabel || 'from the sound card';
-    fillInputs(); audioPermission(); audioGranted(); con.dim(`audio: ${capture.deviceLabel || 'input'} at ${capture.sampleRate} Hz; CW and SSTV decoders running`);
+    fillInputs(); audioPermission(); audioGranted(); showWav(); con.dim(`audio: ${capture.deviceLabel || 'input'} at ${capture.sampleRate} Hz; CW and SSTV decoders running`);
   } catch (e) { con.err('audio: ' + e.message); $('audioInfo').textContent = e.name === 'NotAllowedError' ? 'microphone permission refused' : e.message; }
 });
 function setAudioView(v) { state.audio.view = v; $('audioWrap').dataset.view = v; $('cwText').hidden = v !== 'cw'; $('sstvView').hidden = v !== 'sstv'; document.querySelectorAll('[data-audio-view]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.audioView === v))); chart.dirty = true; }

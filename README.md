@@ -412,6 +412,21 @@ feeding the decoder through a loopback. Set the sound card's output level
 so the SA868 is not over-deviated: start low, decode it on the bench pair,
 raise until the picture is clean. Firmware 0.5.0+.
 
+### Recording the audio, and tuning the decoders
+
+Audio → *Record audio* captures what the sound card hears to a WAV; *Open
+a WAV* runs a file back through the decoders, as fast as it can or in real
+time with *Listen* on. The decoders were written against synthetic signals
+and a real fox on FM is the thing they need to be tuned to: when the CW
+text comes out wrong, record a minute that includes a couple of bursts,
+save it, and attach it to an issue — it becomes a test. The decoded log
+(one line per burst: time, frequency, pitch, speed, text; *Save log*) is
+the other half of that report.
+
+Voice on the channel decodes as junk, by design: the decoder reports any
+tone-shaped thing it hears. Judge it on the fox's Morse, not on someone
+talking.
+
 ### Noise quieting
 
 Audio → *Noise quieting*: with the fox's squelch at 0, an FM receiver's

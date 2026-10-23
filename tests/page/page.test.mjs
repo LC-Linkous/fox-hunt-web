@@ -230,6 +230,7 @@ ptest('audio: the CW decoder reads W1AW from the sound card and the SSTV decoder
     await page.check('#quietChk');
     await page.click('#audioBtn');
     await page.waitForFunction(() => /dBFS/.test(document.getElementById('audioLevel').textContent), null, { timeout: 10000 });
+    await page.click('#wavRecBtn'); assert.match(await page.locator('#wavRecBtn').innerText(), /Stop recording/);
     await page.waitForFunction(() => /W1AW/.test(document.getElementById('cwDecoded').textContent), null, { timeout: 15000 });
     await page.waitForFunction(() => /line|image|done|decod/i.test(document.getElementById('sstvStatus').textContent), null, { timeout: 20000 });
     await page.waitForFunction(() => /done|complete|finished/i.test(document.getElementById('sstvStatus').textContent), null, { timeout: (secs + 15) * 1000 });
@@ -237,6 +238,15 @@ ptest('audio: the CW decoder reads W1AW from the sound card and the SSTV decoder
     const px = await page.evaluate(() => { const c = document.getElementById('sstvCanvas'), g = c.getContext('2d'); const l = g.getImageData(40, 100, 1, 1).data, r = g.getImageData(280, 100, 1, 1).data; return [[...l].slice(0, 3), [...r].slice(0, 3)]; });
     assert.ok(px[0][0] > 150 && px[0][1] < 100, `left pixel ${px[0]} should be red`); assert.ok(px[1][1] > 150 && px[1][0] < 100, `right pixel ${px[1]} should be green`);
     assert.match(await page.locator('#quietText').innerText(), /dB/);
+    // the decoded log has the burst with its time and pitch; the WAV we recorded replays through the same decoders
+    assert.match(await page.locator('#cwLog').innerText(), /800 Hz.*W1AW/s);
+    await page.click('#wavRecBtn'); assert.match(await page.locator('#wavText').innerText(), /\d+ s recorded/);
+    const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#wavSaveBtn')]); const wavFile = await dl.path();
+    assert.ok(fs.statSync(wavFile).size > 1_000_000, 'a real WAV came out');
+    await page.click('#cwClearBtn'); await page.click('#audioBtn');                                   // stop live audio, then replay the file fast
+    const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.click('#wavOpenBtn')]); await chooser.setFiles(wavFile);
+    await page.waitForFunction(() => /^replayed/.test(document.getElementById('wavText').textContent), null, { timeout: 60000 }).catch(async () => { throw new Error('replay: wavText=' + await page.locator('#wavText').innerText() + ' errors=' + JSON.stringify(errors)); });
+    assert.match(await page.locator('#cwDecoded').innerText(), /W1AW/);
     // listen: the slider sets the monitor gain and the hunt button mirrors it
     await page.locator('#listenLevel').evaluate(el => { el.value = 50; el.dispatchEvent(new Event('input', { bubbles: true })); });
     assert.equal(await page.locator('#listenText').innerText(), '50%'); assert.equal(await page.locator('#hListenBtn').innerText(), 'Listen 50%');

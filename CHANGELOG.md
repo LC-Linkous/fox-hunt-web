@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.12.0 — record and replay audio, decoded log, steadier CW
+
+- **Record audio** (Audio section): what the sound card hears, to a WAV
+  (16-bit mono, up to 10 min), *Save WAV*. **Open a WAV** replays a file
+  through the decoders — fast, or in real time with Listen on. A recording
+  of a real fox is how the decoders get tuned; send one with an issue.
+- **Decoded log**: one line per burst with time, frequency, pitch and
+  speed; *Save log* writes it as tab-separated text. *Save text* still
+  saves the plain stream.
+- **CW decoder**: a mark is held until the space after it is longer than
+  a dropout (0.3 dit), so an FM fade inside a dah no longer splits it into
+  two dits; a run of more than eight elements is dropped as noise rather
+  than printed as `¿`.
+- Installer: when the board reboots without printing its prompt, the
+  console now shows what it did print (the traceback, usually).
+- Tests: WAV round trip and file replay; CW dropout/noise cases; the page
+  audio test records, saves and replays its own WAV. 53 node + 26
+  firmware + 15 page.
+
 ## v0.11.0 — listen, session completeness, scan the event, release workflow
 
 - **Listen**: the captured audio to this device's speaker or headphones —

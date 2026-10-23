@@ -156,6 +156,16 @@
         <p class="hint" style="margin:-4px 0 8px">Plays the captured audio on this device's speaker or headphones. Watch for feedback with a laptop mic as the input.</p>
         <dl class="kv"><dt>Permission</dt><dd id="audioPerm">—</dd><dt>Input</dt><dd id="audioInfo">—</dd><dt>Level</dt><dd id="audioLevel">—</dd><dt>Processing</dt><dd id="audioProc">asks for: echo cancellation off, auto gain off, noise suppression off, mono, 48 kHz</dd></dl>
         <p class="hint">Audio is decoded in memory and never stored; the decoded text and pictures are saved only when you click Save. If the browser grants a setting the page didn't ask for (an automatic gain, say), it is shown above in red — that is the usual reason a decoder "doesn't work".</p>
+        <span class="label group">Record and replay</span>
+        <p class="hint" style="margin:0 0 6px">Record what the sound card hears to a WAV (up to 10 min). Open a WAV to run it through the decoders — fast, or in real time with Listen on. A recording of a real fox is how the decoders get tuned: save one and attach it to an issue.</p>
+        <div class="tools">
+          <button class="btn small" id="wavRecBtn" aria-pressed="false" disabled>Record audio</button>
+          <button class="btn small" id="wavSaveBtn" disabled>Save WAV</button>
+          <button class="btn small" id="wavOpenBtn">Open a WAV</button>
+          <button class="btn small" id="wavStopBtn" disabled>Stop</button>
+          <span class="hint" id="wavText" style="align-self:center">—</span>
+        </div>
+        <label class="row check"><input type="checkbox" id="wavRealtime"> <span>Replay in real time (hear it with Listen; otherwise it decodes as fast as it can)</span></label>
         <span class="label group">Noise quieting</span>
         <label class="row check"><input type="checkbox" id="quietChk"> <span>Use the hiss as a carrier detector <span class="hint">An FM receiver's hiss (2.5–4 kHz here) drops when a carrier arrives, modulated or not. With the fox's squelch at 0 this is a second "signal present" signal that needs neither RSSI nor the SQ wire; it feeds the burst countdown when no SQ wire is declared.</span></span></label>
         <dl class="kv"><dt>Quieting</dt><dd id="quietText">off</dd></dl>
@@ -165,7 +175,8 @@
           <div class="field"><label class="row check" style="margin-top:22px"><input type="checkbox" id="cwAuto" checked> <span>Follow the pitch</span></label></div>
         </div>
         <dl class="kv"><dt>Speed</dt><dd id="cwWpm">—</dd><dt>Signal</dt><dd id="cwSignal">—</dd></dl>
-        <div class="tools"><button class="btn small" id="cwClearBtn">Clear text</button><button class="btn small" id="cwSaveBtn" disabled>Save text</button></div>
+        <div class="tools"><button class="btn small" id="cwClearBtn">Clear text</button><button class="btn small" id="cwSaveBtn" disabled>Save text</button><button class="btn small" id="cwLogBtn" disabled title="Every decoded burst with its time, frequency and pitch">Save log</button></div>
+        <div class="cw-log" id="cwLog" aria-label="Decoded bursts"></div>
         <span class="label group">SSTV</span>
         <p class="hint" style="margin:0 0 6px">Martin M1 / M2, Scottie S1 / S2, Robot36. The mode comes from the VIS header; the picture draws line by line in the Audio window.</p>
         <dl class="kv"><dt>Status</dt><dd id="sstvStatus">waiting for a VIS header</dd></dl>
