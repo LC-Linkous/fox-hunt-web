@@ -84,7 +84,12 @@ export async function installCodePy(link, text, { onProgress = () => {}, fileNam
   prog('reboot', 92, 'rebooting into the new firmware');
   await link._write('\x02'); await sleep(150); clear(link);
   await link._write('\x04');
-  const banner = await waitFor(link, 'ch> ', bannerTimeoutMs).catch(() => { throw new Error('the board rebooted but the firmware did not print its prompt; open the console and look at what it says'); });
+  const banner = await waitFor(link, 'ch> ', bannerTimeoutMs).catch(() => {
+    // show what the board did say: a traceback from code.py is the usual reason
+    const said = link._text(link.buf).replace(/\r/g, '').trim();
+    const e = new Error('the board rebooted but the firmware did not print its prompt' + (said ? '. It printed:\n' + said.slice(-1200) : ' and printed nothing (is this a CircuitPython board? try Thonny once to see what it says at boot)'));
+    e.boardOutput = said; throw e;
+  });
   const version = /(fox\w+ \d+\.\d+\.\d+ [^\r\n]+)/.exec(banner);
   await sleep(200); clear(link);
   prog('done', 100, version ? version[1] : 'running');

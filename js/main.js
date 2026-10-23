@@ -983,7 +983,8 @@ $('fwInstallBtn').addEventListener('click', async () => {
     fwNote(`installed ${r.version || 'the firmware'}${band ? `, band ${band}` : ''}${cs ? `, callsign ${cs.toUpperCase()}` : ''}. The fox is connected and ready.`);
     chart.dirty = true;
   } catch (e) {
-    fwNote('install failed: ' + e.message, true); con.err('installer: ' + e.message);
+    fwNote('install failed: ' + e.message.split('\n')[0], true); con.err('installer: ' + e.message);
+    if (e.boardOutput) for (const line of e.boardOutput.split('\n')) con.dim('board: ' + line);
     // the board may be sitting in the raw REPL: leave it (Ctrl+B) and reboot (Ctrl+D) so whatever code.py is there runs
     try { await link._write('\x02'); await new Promise(r => setTimeout(r, 150)); await link._write('\x04'); await new Promise(r => setTimeout(r, 2500)); link._take(); } catch {}
     if (opened) { try { await link.close(); } catch {} }
